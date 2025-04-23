@@ -1,0 +1,61 @@
+# General
+*.log
+*.bak
+*.tmp
+*.swp
+*~
+
+# Ubuntu/Linux specific
+*.o
+*.so
+*.a
+.directory
+
+# Editor files
+.vscode/
+.idea/
+*.sublime-*
+.project
+.settings/
+
+# Temporary files
+temp/
+tmp/
+
+# Logs
+logs/
+*.log
+
+# Environment files
+.env
+user.env
+# default.env is not ignored
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Build files
+build/
+dist/
+
+# Bash script generated files
+*.out
+
+# Debug files
+*.stackdump
+core
+
+# Dependencies
+node_modules/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db 
