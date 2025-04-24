@@ -3,7 +3,12 @@
 # Part of Milestone 1
 
 # Create system log file if it doesn't exist
-SYSTEM_LOG_FILE="${SYSTEM_LOG_FILE:-/var/log/pg_system_init.log}"
+# Use the environment variable from default.env or user.env, with fallback
+if [ -z "$SYSTEM_LOG_FILE" ]; then
+    SYSTEM_LOG_FILE="/var/log/system_init.log"
+    log_warn "SYSTEM_LOG_FILE not defined in environment, using default: $SYSTEM_LOG_FILE"
+fi
+
 touch "$SYSTEM_LOG_FILE" 2>/dev/null || true
 
 # Function to execute system commands silently
