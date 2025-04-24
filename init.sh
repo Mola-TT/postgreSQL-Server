@@ -10,7 +10,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Source logger
-source "$SCRIPT_DIR/logger.sh"
+source "$SCRIPT_DIR/tools/logger.sh"
 
 # Load default environment variables
 source "$SCRIPT_DIR/default.env"
