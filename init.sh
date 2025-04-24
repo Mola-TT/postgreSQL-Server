@@ -18,15 +18,6 @@ source "$SCRIPT_DIR/default.env"
 # Source utilities
 source "$SCRIPT_DIR/tools/utilities.sh"
 
-# Load user environment variables if they exist (overrides defaults)
-if [ -f "$SCRIPT_DIR/user.env" ]; then
-    log_info "Loading user environment variables from user.env"
-    source "$SCRIPT_DIR/user.env"
-else
-    log_warn "No user.env file found, using default settings only"
-    log_info "You can create user.env by copying user.env.template and modifying it"
-fi
-
 # Display init banner
 display_banner() {
     echo "-----------------------------------------------"
@@ -74,6 +65,15 @@ set_timezone() {
 main() {
     display_banner
     
+    # Load user environment variables if they exist (overrides defaults)
+    if [ -f "$SCRIPT_DIR/user.env" ]; then
+        log_info "Loading user environment variables from user.env"
+        source "$SCRIPT_DIR/user.env"
+    else
+        log_info "No user.env file found, using default settings only"
+        log_info "You can create user.env by copying user.env.template and modifying it"
+    fi
+
     # Check if running as root
     if [ "$(id -u)" -ne 0 ]; then
         log_error "This script must be run as root"
