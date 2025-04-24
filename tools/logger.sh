@@ -37,13 +37,13 @@ log() {
   local timestamp=$(get_timestamp)
   
   if [ $level -ge $CURRENT_LOG_LEVEL ]; then
-    # Format: [BOLD timestamp] [COLORED level_text] WHITE message
-    echo -e "${BOLD}[${timestamp}]${COLOR_RESET} ${level_color}[${level_text}]${COLOR_RESET} ${COLOR_WHITE}${message}${COLOR_RESET}"
+    # Format: [BOLD timestamp] {COLORED level_text} WHITE message
+    echo -e "${COLOR_WHITE}${BOLD}[${timestamp}]${COLOR_RESET}${COLOR_WHITE} {${level_color}${level_text}${COLOR_WHITE}} ${message}${COLOR_RESET}"
   fi
   
   # Also write to log file if specified
   if [ ! -z "$LOG_FILE" ]; then
-    echo "[${timestamp}] [${level_text}] ${message}" >> "$LOG_FILE"
+    echo "[${timestamp}] {${level_text}} ${message}" >> "$LOG_FILE"
   fi
 }
 
