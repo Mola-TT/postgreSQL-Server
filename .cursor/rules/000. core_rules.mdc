@@ -1,0 +1,45 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# PostgreSQL Server Initialization Core Rules
+
+## Project Purpose
+This project contains Ubuntu scripts for initializing a PostgreSQL server. The scripts are developed on a Windows machine but deployed on Ubuntu systems.
+
+## Core Development Rules
+
+### Code Principles
+- **Minimal Code** – No unnecessary functions, variables, or complexity
+- **Direct Implementation** – Solve problems using the shortest and clearest approach
+- **Line Endings** – Be mindful of Windows vs Ubuntu newline character differences
+- **Single Source of Truth** – All configuration and setup logic in main initialization scripts
+- **NO HOTFIXES** – All fixes must be implemented directly in the main scripts
+
+### ❌ What NOT to Do
+- **NEVER create separate hotfix scripts**  
+  - Avoid patching issues with temporary fixes
+  - Keep the initialization script as the single source of truth
+  - Do not create workarounds outside the main scripts
+  - Do not implement temporary solutions with the intention to "fix properly later"
+
+### ✅ What to Do Instead
+1. **Fix initialization scripts directly**  
+   - Identify and correct issues in the main scripts
+   - Ensure fixes integrate smoothly into the existing setup process
+   - All fixes must be permanent solutions implemented in the original scripts
+   - Document any significant changes within the script comments
+
+### 🎯 Project Goals
+- Maintain a **clean and maintainable** setup process
+- Ensure **consistent deployments** without scattered fixes
+- Keep scripts **self-sufficient and reliable**
+- **Zero tolerance** for temporary hotfixes or workarounds
+
+### Development Workflow
+1. Identify issues or improvements needed
+2. Modify main script files directly - NEVER create separate fix scripts
+3. Test changes thoroughly on Windows
+4. Ensure line endings are properly handled for Ubuntu deployment
+5. Generate code according to the current milestone stated in `001.milestone.mdc` and minimize modifications that affect other milestones 

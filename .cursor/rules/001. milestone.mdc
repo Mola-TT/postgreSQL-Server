@@ -1,0 +1,17 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Milestone
+
+## Current Progress: Milestone 1
+
+## Objectives
+
+1. Create an `init.sh` script to update the Ubuntu server silently
+2. Create a `logger.sh` script to provide a logging function
+3. Create a `user.env` file for entering user variables
+4. Create a `default.env` file for default variables
+
+
