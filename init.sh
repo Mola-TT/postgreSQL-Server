@@ -15,32 +15,8 @@ source "$SCRIPT_DIR/tools/logger.sh"
 # Load default environment variables
 source "$SCRIPT_DIR/default.env"
 
-# Create system log file if it doesn't exist
-SYSTEM_LOG_FILE="${SYSTEM_LOG_FILE:-/var/log/pg_system_init.log}"
-touch "$SYSTEM_LOG_FILE" 2>/dev/null || true
-
-# Function to execute system commands silently
-# Only debug logs and errors are displayed, all other output is redirected to log file
-execute_silently() {
-    local cmd="$1"
-    local msg="$2"
-    local err_msg="$3"
-    
-    log_debug "Executing: $cmd"
-    
-    # Execute command, redirect stdout to log file, redirect stderr to variable
-    if ! output=$(eval "$cmd" >> "$SYSTEM_LOG_FILE" 2>&1); then
-        log_error "$err_msg"
-        log_debug "Command failed with output: $output"
-        return 1
-    fi
-    
-    if [ -n "$msg" ]; then
-        log_info "$msg"
-    fi
-    
-    return 0
-}
+# Source utilities
+source "$SCRIPT_DIR/tools/utilities.sh"
 
 # Load user environment variables if they exist (overrides defaults)
 if [ -f "$SCRIPT_DIR/user.env" ]; then
@@ -55,7 +31,6 @@ fi
 display_banner() {
     echo "-----------------------------------------------"
     echo "PostgreSQL Server Initialization"
-    echo "Version: 1.0.0 (Milestone 1)"
     echo "-----------------------------------------------"
     log_info "Starting initialization process"
 }
@@ -65,8 +40,8 @@ update_system() {
     if [ "$SYSTEM_UPDATE" = true ]; then
         log_info "Updating system packages silently. This may take a while..."
         
-        # Clear previous logs
-        > "$SYSTEM_LOG_FILE"
+        # Clear logs
+        clear_logs
         
         # Update package lists silently
         execute_silently "apt-get update -qq" \
@@ -105,7 +80,6 @@ main() {
         exit 1
     fi
     
-    log_info "Initializing with PostgreSQL version $PG_VERSION"
     log_debug "System log file: $SYSTEM_LOG_FILE"
     
     # Update system packages
