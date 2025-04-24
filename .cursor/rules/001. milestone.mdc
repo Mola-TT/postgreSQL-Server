@@ -11,6 +11,9 @@ alwaysApply: true
 
 1. Create an `init.sh` script to update the Ubuntu server silently
 2. Create a `logger.sh` script to provide a logging function
+   - Log messages should be white in color by default
+   - Timestamps in logs should be bold
+   - Only log level text and log level should have color formatting
 3. Create a `user.env` file for entering user variables
 4. Create a `default.env` file for default variables
 
