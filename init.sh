@@ -18,47 +18,15 @@ source "$SCRIPT_DIR/default.env"
 # Source utilities
 source "$SCRIPT_DIR/tools/utilities.sh"
 
+# Source general configuration
+source "$SCRIPT_DIR/setup/general_config.sh"
+
 # Display init banner
 display_banner() {
     echo "-----------------------------------------------"
     echo "PostgreSQL Server Initialization"
     echo "-----------------------------------------------"
     log_info "Starting initialization process"
-}
-
-# Update system packages silently
-update_system() {
-    if [ "$SYSTEM_UPDATE" = true ]; then
-        log_info "Updating system packages silently. This may take a while..."
-        
-        # Clear logs
-        clear_logs
-        
-        # Update package lists silently
-        execute_silently "apt-get update -qq" \
-            "" \
-            "Failed to update package lists" || return 1
-        
-        # Upgrade packages silently with no prompts
-        execute_silently "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq" \
-            "System packages updated successfully" \
-            "Failed to upgrade packages" || return 1
-    else
-        log_info "System update skipped as per configuration"
-    fi
-}
-
-# Set timezone
-set_timezone() {
-    log_info "Setting timezone to $TIMEZONE"
-    
-    execute_silently "timedatectl set-timezone \"$TIMEZONE\"" \
-        "" \
-        "Failed to set timezone to $TIMEZONE" || return 1
-    
-    # Get current timezone
-    current_tz=$(timedatectl | grep "Time zone" | awk '{print $3}')
-    log_info "Timezone set to $current_tz"
 }
 
 # Main function
