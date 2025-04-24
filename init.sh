@@ -48,7 +48,7 @@ main() {
         exit 1
     fi
     
-    log_debug "System log file: $SYSTEM_LOG_FILE"
+    log_debug "Log file: $LOG_FILE"
     
     # Update system packages
     update_system
@@ -59,7 +59,7 @@ main() {
     log_info "Initialization complete"
     
     if [ "$LOG_LEVEL" -eq "$LOG_LEVEL_DEBUG" ]; then
-        log_debug "For detailed system logs, check: $SYSTEM_LOG_FILE"
+        log_debug "For detailed logs, check: $LOG_FILE"
     fi
 }
 

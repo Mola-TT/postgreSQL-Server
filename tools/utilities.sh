@@ -2,14 +2,13 @@
 # utilities.sh - Utility functions for PostgreSQL server initialization
 # Part of Milestone 1
 
-# Create system log file if it doesn't exist
-# Use the environment variable from default.env or user.env, with fallback
-if [ -z "$SYSTEM_LOG_FILE" ]; then
-    SYSTEM_LOG_FILE="/var/log/system_init.log"
-    log_warn "SYSTEM_LOG_FILE not defined in environment, using default: $SYSTEM_LOG_FILE"
+# Create log file if it doesn't exist
+if [ -z "$LOG_FILE" ]; then
+    LOG_FILE="/var/log/server_init.log"
+    log_warn "LOG_FILE not defined in environment, using default: $LOG_FILE"
 fi
 
-touch "$SYSTEM_LOG_FILE" 2>/dev/null || true
+touch "$LOG_FILE" 2>/dev/null || true
 
 # Function to execute system commands silently
 # Only debug logs and errors are displayed, all other output is redirected to log file
@@ -21,7 +20,7 @@ execute_silently() {
     log_debug "Executing: $cmd"
     
     # Execute command, redirect stdout to log file, redirect stderr to variable
-    if ! output=$(eval "$cmd" >> "$SYSTEM_LOG_FILE" 2>&1); then
+    if ! output=$(eval "$cmd" >> "$LOG_FILE" 2>&1); then
         log_error "$err_msg"
         log_debug "Command failed with output: $output"
         return 1
@@ -36,11 +35,6 @@ execute_silently() {
 
 # Function to clear log files
 clear_logs() {
-    if [ -f "$SYSTEM_LOG_FILE" ]; then
-        > "$SYSTEM_LOG_FILE"
-        log_debug "System log file cleared: $SYSTEM_LOG_FILE"
-    fi
-
     if [ -f "$LOG_FILE" ]; then
         > "$LOG_FILE"
         log_debug "Log file cleared: $LOG_FILE"
