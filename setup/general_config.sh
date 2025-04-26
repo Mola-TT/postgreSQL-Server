@@ -26,58 +26,11 @@ update_system() {
 
 # Set timezone
 set_timezone() {
-    # Validate timezone format before setting it
-    if [[ "$TIMEZONE" =~ ^[A-Za-z]+/[A-Za-z_]+$ ]]; then
-        # Valid timezone format like "Region/City"
-        log_info "Setting timezone to $TIMEZONE"
-        
-        execute_silently "timedatectl set-timezone \"$TIMEZONE\"" \
-            "" \
-            "Failed to set timezone to $TIMEZONE" || return 1
-    elif [[ "$TIMEZONE" == "UTC" ]]; then
-        # UTC is a valid timezone
-        log_info "Setting timezone to UTC"
-        
-        execute_silently "timedatectl set-timezone UTC" \
-            "" \
-            "Failed to set timezone to UTC" || return 1
-    else
-        # Handle three-letter time zone codes by mapping them to proper timezone
-        case "$TIMEZONE" in
-            "HKT")
-                actual_timezone="Asia/Hong_Kong"
-                ;;
-            "EST")
-                actual_timezone="America/New_York"
-                ;;
-            "CST")
-                actual_timezone="America/Chicago"
-                ;;
-            "MST")
-                actual_timezone="America/Denver"
-                ;;
-            "PST")
-                actual_timezone="America/Los_Angeles"
-                ;;
-            "JST")
-                actual_timezone="Asia/Tokyo"
-                ;;
-            "GMT")
-                actual_timezone="Europe/London"
-                ;;
-            *)
-                log_error "Invalid timezone format: $TIMEZONE"
-                log_info "Using default timezone: UTC"
-                actual_timezone="UTC"
-                ;;
-        esac
-
-        log_info "Mapping $TIMEZONE to $actual_timezone"
-        
-        execute_silently "timedatectl set-timezone \"$actual_timezone\"" \
-            "" \
-            "Failed to set timezone to $actual_timezone" || return 1
-    fi
+    log_info "Setting timezone to $TIMEZONE"
+    
+    execute_silently "timedatectl set-timezone \"$TIMEZONE\"" \
+        "" \
+        "Failed to set timezone to $TIMEZONE" || return 1
     
     # Get current timezone
     current_tz=$(timedatectl | grep "Time zone" | awk '{print $3}')
