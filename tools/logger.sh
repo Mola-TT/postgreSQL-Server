@@ -25,10 +25,10 @@ COLOR_ERROR='\033[0;31m'   # Red
 
 # Log level padding - ensures consistent spacing after level text
 # "DEBUG" = 5 chars, "INFO" = 4 chars, "WARNING" = 7 chars, "ERROR" = 5 chars
-DEBUG_PAD=""          # 0 padding needed (5 chars)
-INFO_PAD=" "          # 1 padding needed (4 + 1 = 5)
-WARN_PAD=""           # 0 padding needed ("WARNING" = 7 chars, which is longest)
-ERROR_PAD="  "        # 2 padding needed (5 + 2 = 7)
+DEBUG_PAD="  "       # 2 padding needed (5 + 2 = 7)
+INFO_PAD="   "       # 3 padding needed (4 + 3 = 7)
+WARN_PAD=""          # 0 padding needed ("WARNING" = 7 chars, which is longest)
+ERROR_PAD="  "       # 2 padding needed (5 + 2 = 7)
 
 # Get timestamp
 get_timestamp() {
@@ -46,14 +46,14 @@ log() {
   
   if [ $level -ge $CURRENT_LOG_LEVEL ]; then
     # Format: [BOLD timestamp] {COLORED level_text} WHITE message
-    # The level_pad ensures all messages start at the same position
-    echo -e "${COLOR_WHITE}${BOLD}[${timestamp}]${COLOR_RESET}${COLOR_WHITE} {${level_color}${level_text}${level_pad}${COLOR_WHITE}} ${message}${COLOR_RESET}"
+    # The level_pad ensures all messages start at the same position (after the bracket)
+    echo -e "${COLOR_WHITE}${BOLD}[${timestamp}]${COLOR_RESET}${COLOR_WHITE} {${level_color}${level_text}${COLOR_WHITE}}${level_pad}${message}${COLOR_RESET}"
   fi
   
   # Also write to log file if specified
   if [ ! -z "$LOG_FILE" ]; then
     # For log files, use consistent padding too
-    echo "[${timestamp}] {${level_text}${level_pad}} ${message}" >> "$LOG_FILE"
+    echo "[${timestamp}] {${level_text}}${level_pad}${message}" >> "$LOG_FILE"
   fi
 }
 
