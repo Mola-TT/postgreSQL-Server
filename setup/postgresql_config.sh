@@ -79,6 +79,11 @@ configure_postgresql() {
         "PostgreSQL HBA configuration backed up" \
         "Failed to backup PostgreSQL HBA configuration" || return 1
     
+    # Set PostgreSQL superuser password
+    execute_silently "su - postgres -c \"psql -c \\\"ALTER USER postgres PASSWORD '${PG_SUPERUSER_PASSWORD}'\\\"\"" \
+        "PostgreSQL superuser password set" \
+        "Failed to set PostgreSQL superuser password" || return 1
+    
     # Add entry to allow connections from configured IP ranges
     if [ "$ALLOWED_IP_RANGES" != "*" ]; then
         # Split the comma-separated IP ranges and add each one
@@ -140,7 +145,8 @@ default_pool_size = ${PGB_DEFAULT_POOL_SIZE}
 EOL
     
     # Create userlist.txt file for pgbouncer authentication
-    execute_silently "echo \"\\\"postgres\\\" \\\"$(sudo -u postgres psql -t -A -c \\\"SELECT passwd FROM pg_shadow WHERE usename='postgres'\\\")\\\"\"> /etc/pgbouncer/userlist.txt" \
+    # The MD5 hash includes the username as part of the hash calculation
+    execute_silently "echo \"\\\"postgres\\\" \\\"md5$(echo -n "${PG_SUPERUSER_PASSWORD}postgres" | md5sum | cut -d' ' -f1)\\\"\"> /etc/pgbouncer/userlist.txt" \
         "pgbouncer authentication configured for postgres user" \
         "Failed to create pgbouncer userlist.txt" || return 1
     
