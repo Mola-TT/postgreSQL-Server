@@ -174,7 +174,28 @@ test_pgbouncer_auth() {
         return 0
     else
         log_status_warn "pgbouncer authentication file has unusual permissions or ownership (permissions: $permissions, owner: $owner)"
-        return 1
+        
+        # Try to fix the permissions and ownership
+        log_info "Attempting to fix pgbouncer authentication file permissions and ownership"
+        execute_silently "sudo chown postgres:postgres /etc/pgbouncer/userlist.txt" \
+            "" \
+            "Failed to fix ownership on pgbouncer authentication file" || log_warn "Could not fix ownership on pgbouncer authentication file"
+        
+        execute_silently "sudo chmod 600 /etc/pgbouncer/userlist.txt" \
+            "" \
+            "Failed to fix permissions on pgbouncer authentication file" || log_warn "Could not fix permissions on pgbouncer authentication file"
+        
+        # Check again after fixing
+        permissions=$(stat -c "%a" /etc/pgbouncer/userlist.txt 2>/dev/null || stat -f "%p" /etc/pgbouncer/userlist.txt 2>/dev/null)
+        owner=$(stat -c "%U:%G" /etc/pgbouncer/userlist.txt 2>/dev/null || stat -f "%Su:%Sg" /etc/pgbouncer/userlist.txt 2>/dev/null)
+        
+        if [[ ("$permissions" == "640" || "$permissions" == "600") && "$owner" == "postgres:postgres" ]]; then
+            log_status_pass "Successfully fixed pgbouncer authentication file permissions and ownership"
+            return 0
+        else
+            log_status_warn "Could not fix pgbouncer authentication file permissions and ownership"
+            return 1
+        fi
     fi
 }
 
@@ -238,6 +259,10 @@ test_temp_user_connection() {
             "Failed to add temporary user to pgbouncer authentication file"; then
             log_status_warn "Could not add temporary user to pgbouncer authentication file"
         fi
+        
+        # Fix file ownership and permissions after modification
+        execute_silently "sudo chown postgres:postgres /etc/pgbouncer/userlist.txt" "" "Failed to fix ownership"
+        execute_silently "sudo chmod 600 /etc/pgbouncer/userlist.txt" "" "Failed to fix permissions"
     else
         # For scram-sha-256 or md5, first set a password that can be extracted
         execute_silently "su - postgres -c \"psql -c \\\"ALTER USER $temp_user WITH PASSWORD '$temp_password';\\\"\"" \
@@ -256,18 +281,30 @@ test_temp_user_connection() {
                     "" \
                     "Failed to append hash to pgbouncer authentication file"
                 rm -f "$temp_hash_file"
+                
+                # Fix file ownership and permissions after modification
+                execute_silently "sudo chown postgres:postgres /etc/pgbouncer/userlist.txt" "" "Failed to fix ownership"
+                execute_silently "sudo chmod 600 /etc/pgbouncer/userlist.txt" "" "Failed to fix permissions"
             else
                 log_warn "Failed to extract hash for temporary user, falling back to direct append"
                 # Fall back to direct extraction and append
                 execute_silently "su - postgres -c \"psql -t -c \\\"SELECT '\\\\\\\"$temp_user\\\\\\\" \\\\\\\"' || rolpassword || '\\\\\\\"' FROM pg_authid WHERE rolname='$temp_user'\\\" | sudo tee -a /etc/pgbouncer/userlist.txt > /dev/null\"" \
                     "" \
                     "Failed to add temporary user to pgbouncer authentication file"
+                
+                # Fix file ownership and permissions after modification
+                execute_silently "sudo chown postgres:postgres /etc/pgbouncer/userlist.txt" "" "Failed to fix ownership"
+                execute_silently "sudo chmod 600 /etc/pgbouncer/userlist.txt" "" "Failed to fix permissions"
             fi
         else
             # Direct extraction and append if extract_hash function is not available
             execute_silently "su - postgres -c \"psql -t -c \\\"SELECT '\\\\\\\"$temp_user\\\\\\\" \\\\\\\"' || rolpassword || '\\\\\\\"' FROM pg_authid WHERE rolname='$temp_user'\\\" | sudo tee -a /etc/pgbouncer/userlist.txt > /dev/null\"" \
                 "" \
                 "Failed to add temporary user to pgbouncer authentication file"
+            
+            # Fix file ownership and permissions after modification
+            execute_silently "sudo chown postgres:postgres /etc/pgbouncer/userlist.txt" "" "Failed to fix ownership"
+            execute_silently "sudo chmod 600 /etc/pgbouncer/userlist.txt" "" "Failed to fix permissions"
         fi
     fi
     
@@ -309,6 +346,16 @@ test_temp_user_connection() {
     execute_silently "grep -v \"\\\"$temp_user\\\"\" /etc/pgbouncer/userlist.txt | sudo tee /etc/pgbouncer/userlist.txt.new > /dev/null && sudo mv /etc/pgbouncer/userlist.txt.new /etc/pgbouncer/userlist.txt" \
         "" \
         "Failed to remove temporary user from pgbouncer authentication file" || log_warn "Could not clean up pgbouncer authentication file"
+    
+    # Fix permissions and ownership on pgbouncer authentication file
+    log_info "Fixing pgbouncer authentication file permissions and ownership"
+    execute_silently "sudo chown postgres:postgres /etc/pgbouncer/userlist.txt" \
+        "" \
+        "Failed to fix ownership on pgbouncer authentication file" || log_warn "Could not fix ownership on pgbouncer authentication file"
+    
+    execute_silently "sudo chmod 600 /etc/pgbouncer/userlist.txt" \
+        "" \
+        "Failed to fix permissions on pgbouncer authentication file" || log_warn "Could not fix permissions on pgbouncer authentication file"
     
     # Reload pgbouncer again after cleanup
     execute_silently "sudo systemctl reload pgbouncer || sudo systemctl restart pgbouncer" \
