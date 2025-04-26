@@ -7,14 +7,35 @@ alwaysApply: true
 
 ## Current Progress: Milestone 1
 
-## Objectives
+## Milestone 1
 
-1. Create an `init.sh` script to update the Ubuntu server silently
-2. Create a `logger.sh` script to provide a logging function
-   - Log messages should be white in color by default
-   - Timestamps in logs should be bold
-   - Only log level text and log level should have color formatting
-3. Create a `user.env` file for entering user variables
-4. Create a `default.env` file for default variables
+1. Created an `init.sh` script that:
+   - Updates the Ubuntu server silently
+   - Sets up timezone directly from configuration
+   - Checks if running as root
+   - Loads environment variables
+   - Provides proper initialization flow
+
+2. Created a `logger.sh` script with logging functions:
+   - Implemented color-coded log levels (DEBUG, INFO, WARNING, ERROR)
+   - Made log message timestamps bold
+   - Made log messages white by default
+   - Applied colors only to log level text
+   - Added file logging capability
+
+3. Created environment configuration:
+   - Added `default.env` with default configuration
+   - Added `user.env.template` for user-specific settings
+   - Implemented environment variable override logic
+
+4. Added utility functions:
+   - Created `utilities.sh` with helper functions
+   - Implemented `execute_silently` for quiet command execution
+   - Added log file management
+
+5. Created general configuration:
+   - Added system update functionality
+   - Added timezone configuration
+
 
 
