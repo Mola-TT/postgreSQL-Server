@@ -2,6 +2,9 @@
 # postgresql_config.sh - PostgreSQL and pgbouncer installation and configuration
 # Part of Milestone 2
 
+# Import our password hash extraction tool
+source "$(dirname "$(dirname "${BASH_SOURCE[0]}")")/tools/pg_extract_hash.sh"
+
 # Install PostgreSQL
 install_postgresql() {
     log_info "Installing PostgreSQL ${PG_VERSION}..."
@@ -148,38 +151,53 @@ max_client_conn = ${PGB_MAX_CLIENT_CONN}
 default_pool_size = ${PGB_DEFAULT_POOL_SIZE}
 EOL
     
-    # Create a simpler temp file first
+    # Using our robust password hash extraction tool
     log_info "Creating pgbouncer authentication file..."
-    TEMP_AUTH_FILE=$(mktemp)
-
-    # Generate the userlist.txt content in a simpler way - first get the hashed password
-    if [ "${PG_AUTH_METHOD}" = "scram-sha-256" ]; then
-        # For SCRAM-SHA-256, we'll get the hash directly from PostgreSQL
-        execute_silently "su - postgres -c \"psql -t -c \\\"SELECT concat('\\\"postgres\\\" \\\"', passwd, '\\\"') FROM pg_shadow WHERE usename='postgres';\\\"\" > ${TEMP_AUTH_FILE}\"" \
+    
+    # Create a temporary file to store the password hash
+    local auth_temp_file=$(mktemp)
+    
+    # Use our specialized extraction function
+    if extract_hash "postgres" "$auth_temp_file"; then
+        # Success - copy the file to its final location
+        execute_silently "cp ${auth_temp_file} /etc/pgbouncer/userlist.txt" \
             "" \
-            "Failed to retrieve PostgreSQL password hash" || return 1
+            "Failed to copy pgbouncer userlist" || return 1
+            
+        # Set proper permissions
+        execute_silently "chown postgres:postgres /etc/pgbouncer/userlist.txt" \
+            "" \
+            "Failed to set ownership on pgbouncer userlist.txt" || return 1
+        
+        execute_silently "chmod 640 /etc/pgbouncer/userlist.txt" \
+            "pgbouncer authentication configured successfully with ${PGB_AUTH_TYPE}" \
+            "Failed to set permissions on pgbouncer userlist.txt" || return 1
     else
-        # Fallback for md5 authentication
-        MD5_PASS=$(echo -n "${PG_SUPERUSER_PASSWORD}postgres" | md5sum | cut -d' ' -f1)
-        echo "\"postgres\" \"md5${MD5_PASS}\"" > ${TEMP_AUTH_FILE}
+        # Extraction failed, fall back to plain auth as a last resort
+        log_warn "Failed to extract secure password hash, falling back to plain auth"
+        
+        # Update config file to use plain auth
+        execute_silently "sed -i 's/auth_type = .*/auth_type = plain/' /etc/pgbouncer/pgbouncer.ini" \
+            "" \
+            "Failed to update pgbouncer auth type" || return 1
+            
+        # Create userlist with plain password
+        execute_silently "echo \"\\\"postgres\\\" \\\"${PG_SUPERUSER_PASSWORD}\\\"\" > /etc/pgbouncer/userlist.txt" \
+            "" \
+            "Failed to create pgbouncer userlist with plain auth" || return 1
+            
+        # Set more restrictive permissions for plain text
+        execute_silently "chown postgres:postgres /etc/pgbouncer/userlist.txt" \
+            "" \
+            "Failed to set ownership on pgbouncer userlist.txt" || return 1
+        
+        execute_silently "chmod 600 /etc/pgbouncer/userlist.txt" \
+            "pgbouncer configured with fallback plain authentication" \
+            "Failed to set permissions on pgbouncer userlist.txt" || return 1
     fi
-
-    # Now copy the temp file to the actual location and set permissions
-    execute_silently "cp ${TEMP_AUTH_FILE} /etc/pgbouncer/userlist.txt" \
-        "" \
-        "Failed to copy pgbouncer userlist" || return 1
-
-    # Cleanup temp file
-    rm -f ${TEMP_AUTH_FILE}
     
-    # Set proper permissions
-    execute_silently "chown postgres:postgres /etc/pgbouncer/userlist.txt" \
-        "" \
-        "Failed to set permissions on pgbouncer userlist.txt" || return 1
-    
-    execute_silently "chmod 640 /etc/pgbouncer/userlist.txt" \
-        "pgbouncer authentication configured successfully" \
-        "Failed to set permissions on pgbouncer userlist.txt" || return 1
+    # Clean up
+    rm -f "$auth_temp_file"
     
     # Configure firewall to route external connections through pgbouncer
     if [ "$ENABLE_FIREWALL" = true ]; then
