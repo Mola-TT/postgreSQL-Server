@@ -102,11 +102,15 @@ configure_postgresql() {
         "PostgreSQL superuser password set" \
         "Failed to set PostgreSQL superuser password" || return 1
     
-    # Configure local access directly to PostgreSQL with scram-sha-256 auth
     # First, remove any existing entries
     execute_silently "grep -v 'host    all' ${PG_CONF_DIR}/pg_hba.conf > ${PG_CONF_DIR}/pg_hba.conf.new && mv ${PG_CONF_DIR}/pg_hba.conf.new ${PG_CONF_DIR}/pg_hba.conf" \
         "" \
         "Failed to clean pg_hba.conf" || return 1
+    
+    # Add special entry for pgbouncer auth_user to access password data
+    execute_silently "echo \"host    postgres        postgres        127.0.0.1/32            trust\" >> ${PG_CONF_DIR}/pg_hba.conf" \
+        "Added trusted authentication for pgbouncer auth_user" \
+        "Failed to add trusted authentication for pgbouncer" || return 1
     
     # Add entry for local connections with scram-sha-256 auth
     execute_silently "echo \"host    all             all             127.0.0.1/32            ${PG_AUTH_METHOD}\" >> ${PG_CONF_DIR}/pg_hba.conf" \
@@ -122,11 +126,6 @@ configure_postgresql() {
     execute_silently "echo \"hostssl all             all             127.0.0.1/32            ${PG_AUTH_METHOD}\" >> ${PG_CONF_DIR}/pg_hba.conf" \
         "Configured PostgreSQL for SSL connections" \
         "Failed to configure PostgreSQL SSL authentication" || return 1
-        
-    # Add special entry for pgbouncer auth_user to access password data
-    execute_silently "echo \"host    postgres        postgres        127.0.0.1/32            trust\" >> ${PG_CONF_DIR}/pg_hba.conf" \
-        "Added trusted authentication for pgbouncer auth_user" \
-        "Failed to add trusted authentication for pgbouncer" || return 1
     
     # Restart PostgreSQL to apply configuration changes
     execute_silently "systemctl restart postgresql" \
@@ -162,7 +161,7 @@ listen_port = ${PGB_LISTEN_PORT}
 auth_type = scram-sha-256
 auth_file = /etc/pgbouncer/userlist.txt
 auth_user = postgres
-auth_query = SELECT usename, passwd FROM pg_shadow WHERE usename=$1
+auth_query = SELECT usename, passwd FROM pg_shadow WHERE usename=\$1
 auth_dbname = postgres
 logfile = /var/log/postgresql/pgbouncer.log
 pidfile = /var/run/postgresql/pgbouncer.pid
@@ -191,16 +190,11 @@ EOL
         "" \
         "Failed to set permissions on temporary directory" || return 1
     
-    # Generate a secure random filename that postgres can write to
-    local timestamp=$(date +%s)
-    local random_str=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 8)
-    local auth_temp_file="/var/lib/postgresql/tmp/pgbouncer_auth_${timestamp}_${random_str}.txt"
+    # Extract password hash using our pg_extract_hash tool
+    log_info "Extracting password hash for pgbouncer authentication"
+    extract_hash "postgres" "/etc/pgbouncer/userlist.txt" || return 1
     
-    # Use a more direct approach to extract the hash for pgbouncer
-    execute_silently "su - postgres -c \"echo \\\"\\\\\\\"postgres\\\\\\\" \\\\\\\"\\$(psql -t -c \\\\\\\"SELECT passwd FROM pg_shadow WHERE usename='postgres'\\\\\\\" | tr -d ' ')\\\\\\\"\\\" > /etc/pgbouncer/userlist.txt\"" \
-        "Created pgbouncer userlist.txt with SCRAM-SHA-256 hash" \
-        "Failed to create pgbouncer authentication file" || return 1
-
+    # Set proper permissions for the auth file
     execute_silently "chown postgres:postgres /etc/pgbouncer/userlist.txt" \
         "" \
         "Failed to set ownership on pgbouncer userlist.txt" || return 1
@@ -296,6 +290,15 @@ setup_postgresql() {
     
     # Configure pgbouncer
     configure_pgbouncer || return 1
+    
+    # Final restart of both services to ensure all configuration changes are applied
+    execute_silently "systemctl restart postgresql" \
+        "PostgreSQL service restarted" \
+        "Failed to restart PostgreSQL service" || return 1
+        
+    execute_silently "systemctl restart pgbouncer" \
+        "pgbouncer service restarted" \
+        "Failed to restart pgbouncer service" || return 1
     
     log_info "PostgreSQL and pgbouncer setup completed successfully"
     log_info "  - PostgreSQL is configured for direct local access on port ${DB_PORT}"

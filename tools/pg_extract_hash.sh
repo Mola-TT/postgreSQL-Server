@@ -61,10 +61,16 @@ extract_hash() {
     if [ -s "$temp_raw" ]; then
       # Trim whitespace and add quotes - do this from the root account since we can read the file
       passwd=$(cat "$temp_raw" | tr -d ' \n\r\t')
+      # Format specifically for pgbouncer scram-sha-256 authentication
       echo "\"${username}\" \"${passwd}\"" > "$output_file"
+      log_info "Checking hash format in $output_file"
+      if grep -q "SCRAM-SHA-256" "$output_file"; then
+        log_info "Successfully extracted SCRAM-SHA-256 hash to $output_file"
+      else
+        log_warn "Hash may not be in SCRAM-SHA-256 format, check pgbouncer compatibility"
+      fi
       # Clean up temp files as postgres user
       su - postgres -c "rm -f \"$temp_raw\"" 2>/dev/null
-      log_info "Successfully extracted password hash to $output_file"
       return 0
     else
       log_error "Method 3 succeeded but password hash extraction returned empty result"
