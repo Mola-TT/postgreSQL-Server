@@ -5,7 +5,14 @@
 # Find the script directory and import essentials
 SCRIPT_DIR="$(cd "$(dirname "$(dirname "${BASH_SOURCE[0]}")")" && pwd)"
 source "$SCRIPT_DIR/tools/logger.sh"
+
+# Set LOG_FILE to prevent warnings
+if [ -z "$LOG_FILE" ]; then
+    export LOG_FILE="/var/log/server_init.log"
+fi
+
 source "$SCRIPT_DIR/tools/utilities.sh"
+source "$SCRIPT_DIR/tools/pg_extract_hash.sh"
 
 # Load default environment variables
 source "$SCRIPT_DIR/default.env"
@@ -218,6 +225,57 @@ test_temp_user_connection() {
         return 1
     fi
     
+    # Add user to pgbouncer auth file
+    log_info "Adding temporary user to pgbouncer authentication file"
+    
+    # Get current authentication type
+    local auth_type=$(grep -i "auth_type" /etc/pgbouncer/pgbouncer.ini | awk -F '=' '{print $2}' | tr -d ' ')
+    
+    if [[ "$auth_type" == "plain" ]]; then
+        # For plain auth, just add the user with plain password
+        if ! execute_silently "echo \"\\\"$temp_user\\\" \\\"$temp_password\\\"\" | sudo tee -a /etc/pgbouncer/userlist.txt > /dev/null" \
+            "" \
+            "Failed to add temporary user to pgbouncer authentication file"; then
+            log_status_warn "Could not add temporary user to pgbouncer authentication file"
+        fi
+    else
+        # For scram-sha-256 or md5, first set a password that can be extracted
+        execute_silently "su - postgres -c \"psql -c \\\"ALTER USER $temp_user WITH PASSWORD '$temp_password';\\\"\"" \
+            "" \
+            "Failed to update temporary user password"
+            
+        # Use the extract_hash function if available
+        if type extract_hash &>/dev/null; then
+            # Create a temporary file for the hash
+            temp_hash_file=$(mktemp)
+            
+            # Extract the hash for the temp user
+            if extract_hash "$temp_user" "$temp_hash_file"; then
+                # Append the hash to pgbouncer's userlist.txt
+                execute_silently "cat $temp_hash_file | sudo tee -a /etc/pgbouncer/userlist.txt > /dev/null" \
+                    "" \
+                    "Failed to append hash to pgbouncer authentication file"
+                rm -f "$temp_hash_file"
+            else
+                log_warn "Failed to extract hash for temporary user, falling back to direct append"
+                # Fall back to direct extraction and append
+                execute_silently "su - postgres -c \"psql -t -c \\\"SELECT '\\\\\\\"$temp_user\\\\\\\" \\\\\\\"' || rolpassword || '\\\\\\\"' FROM pg_authid WHERE rolname='$temp_user'\\\" | sudo tee -a /etc/pgbouncer/userlist.txt > /dev/null\"" \
+                    "" \
+                    "Failed to add temporary user to pgbouncer authentication file"
+            fi
+        else
+            # Direct extraction and append if extract_hash function is not available
+            execute_silently "su - postgres -c \"psql -t -c \\\"SELECT '\\\\\\\"$temp_user\\\\\\\" \\\\\\\"' || rolpassword || '\\\\\\\"' FROM pg_authid WHERE rolname='$temp_user'\\\" | sudo tee -a /etc/pgbouncer/userlist.txt > /dev/null\"" \
+                "" \
+                "Failed to add temporary user to pgbouncer authentication file"
+        fi
+    fi
+    
+    # Reload pgbouncer to apply changes
+    execute_silently "sudo systemctl reload pgbouncer || sudo systemctl restart pgbouncer" \
+        "Reloaded pgbouncer with temporary user" \
+        "Failed to reload pgbouncer"
+    
     # Try connecting directly to PostgreSQL with the temporary user
     if output=$(PGPASSWORD="$temp_password" psql -h localhost -p "${DB_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t 2>/dev/null); then
         if [[ "$output" == *"temp_user_connected"* ]]; then
@@ -245,6 +303,17 @@ test_temp_user_connection() {
         log_status_fail "Failed to connect through pgbouncer with temporary user"
         pgbouncer_success=false
     fi
+    
+    # Clean up pgbouncer userlist.txt
+    log_info "Cleaning up: Removing temporary user from pgbouncer authentication file"
+    execute_silently "grep -v \"\\\"$temp_user\\\"\" /etc/pgbouncer/userlist.txt | sudo tee /etc/pgbouncer/userlist.txt.new > /dev/null && sudo mv /etc/pgbouncer/userlist.txt.new /etc/pgbouncer/userlist.txt" \
+        "" \
+        "Failed to remove temporary user from pgbouncer authentication file" || log_warn "Could not clean up pgbouncer authentication file"
+    
+    # Reload pgbouncer again after cleanup
+    execute_silently "sudo systemctl reload pgbouncer || sudo systemctl restart pgbouncer" \
+        "" \
+        "Failed to reload pgbouncer after cleanup"
     
     # Drop the temporary user
     log_info "Cleaning up: Removing temporary test user"
