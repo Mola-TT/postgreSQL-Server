@@ -29,6 +29,22 @@ display_banner() {
     echo "-----------------------------------------------"
     echo "PostgreSQL Server Initialization"
     echo "-----------------------------------------------"
+    log_info "Starting initialization process"
+}
+
+# Run tests after setup
+run_tests() {
+    log_info "Running test suite..."
+    
+    # Make sure the test runner is executable
+    chmod +x "$SCRIPT_DIR/test/run_tests.sh"
+    
+    # Run the tests
+    if "$SCRIPT_DIR/test/run_tests.sh"; then
+        log_info "All tests passed successfully!"
+    else
+        log_warn "Some tests failed. Please check the logs for details."
+    fi
 }
 
 # Main function
@@ -38,8 +54,7 @@ main() {
     # Set timezone first
     set_timezone
     log_info "Set system timezone to $TIMEZONE"
-
-    log_info "Starting initialization process"   
+    
     
     # Load user environment variables if they exist (overrides defaults)
     if [ -f "$SCRIPT_DIR/user.env" ]; then
@@ -65,6 +80,13 @@ main() {
     setup_postgresql
     
     log_info "Initialization complete"
+    
+    # Run tests if enabled
+    if [ "${RUN_TESTS:-false}" = true ]; then
+        run_tests
+    else
+        log_info "Tests skipped (set RUN_TESTS=true to run tests)"
+    fi
     
     if [ "$LOG_LEVEL" -eq "$LOG_LEVEL_DEBUG" ]; then
         log_debug "For detailed logs, check: $LOG_FILE"
