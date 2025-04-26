@@ -14,83 +14,81 @@ if [ -f "$SCRIPT_DIR/user.env" ]; then
     source "$SCRIPT_DIR/user.env"
 fi
 
-# Set color codes for output
-COLOR_GREEN='\033[0;32m'
-COLOR_RED='\033[0;31m'
-COLOR_YELLOW='\033[0;33m'
-COLOR_RESET='\033[0m'
+# Status indicators with logger
+log_status_pass() {
+    log_info "✓ PASS: $1"
+}
 
-# Status indicators
-PASS="${COLOR_GREEN}✓ PASS${COLOR_RESET}"
-FAIL="${COLOR_RED}✗ FAIL${COLOR_RESET}"
-WARN="${COLOR_YELLOW}! WARN${COLOR_RESET}"
+log_status_fail() {
+    log_error "✗ FAIL: $1"
+}
 
-log_info "Starting PostgreSQL connection tests..."
-echo "=============================================="
-echo "POSTGRESQL CONNECTION TEST RESULTS"
-echo "=============================================="
+log_status_warn() {
+    log_warn "! WARN: $1"
+}
+
+log_status_skip() {
+    log_info "- SKIP: $1"
+}
+
+log_section() {
+    log_info "=============================================="
+    log_info "$1"
+    log_info "=============================================="
+}
+
+log_section "POSTGRESQL CONNECTION TEST RESULTS"
 
 # Test function to check if PostgreSQL is running
 check_postgresql_status() {
-    echo -n "PostgreSQL Service Status: "
     if systemctl is-active --quiet postgresql; then
-        echo -e "$PASS"
+        log_status_pass "PostgreSQL service is running"
         return 0
     else
-        echo -e "$FAIL"
-        log_error "PostgreSQL service is NOT running"
+        log_status_fail "PostgreSQL service is NOT running"
         return 1
     fi
 }
 
 # Test function to check if pgbouncer is running
 check_pgbouncer_status() {
-    echo -n "pgbouncer Service Status: "
     if systemctl is-active --quiet pgbouncer; then
-        echo -e "$PASS"
+        log_status_pass "pgbouncer service is running"
         return 0
     else
-        echo -e "$FAIL"
-        log_error "pgbouncer service is NOT running"
+        log_status_fail "pgbouncer service is NOT running"
         return 1
     fi
 }
 
 # Test direct connection to PostgreSQL
 test_direct_connection() {
-    echo -n "Direct PostgreSQL Connection (port ${DB_PORT}): "
-    
     if output=$(PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql -h localhost -p "${DB_PORT}" -U postgres -c "SELECT 1 as connected;" -t 2>/dev/null); then
         if [[ "$output" == *"1"* ]]; then
-            echo -e "$PASS"
+            log_status_pass "Connected to PostgreSQL directly on port ${DB_PORT}"
             return 0
         else
-            echo -e "$FAIL"
-            log_error "Unexpected output from PostgreSQL"
+            log_status_fail "Unexpected output from PostgreSQL direct connection"
             return 1
         fi
     else
-        echo -e "$WARN (expected if firewall blocks direct access)"
+        log_status_warn "Failed to connect to PostgreSQL directly on port ${DB_PORT} (expected if firewall blocks direct access)"
         return 1
     fi
 }
 
 # Test connection through pgbouncer
 test_pgbouncer_connection() {
-    echo -n "pgbouncer Connection (port ${PGB_LISTEN_PORT}): "
-    
     if output=$(PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql -h localhost -p "${PGB_LISTEN_PORT}" -U postgres -c "SELECT 1 as connected;" -t 2>/dev/null); then
         if [[ "$output" == *"1"* ]]; then
-            echo -e "$PASS"
+            log_status_pass "Connected to PostgreSQL through pgbouncer on port ${PGB_LISTEN_PORT}"
             return 0
         else
-            echo -e "$FAIL"
-            log_error "Unexpected output from pgbouncer connection"
+            log_status_fail "Unexpected output from pgbouncer connection"
             return 1
         fi
     else
-        echo -e "$FAIL"
-        log_error "Failed to connect through pgbouncer"
+        log_status_fail "Failed to connect through pgbouncer on port ${PGB_LISTEN_PORT}"
         return 1
     fi
 }
@@ -98,35 +96,28 @@ test_pgbouncer_connection() {
 # Test connection to specific database if configured
 test_database_connection() {
     if [ "$DB_NAME" != "postgres" ]; then
-        echo -n "Database '${DB_NAME}' Connection: "
-        
         if output=$(PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql -h localhost -p "${PGB_LISTEN_PORT}" -U postgres -d "${DB_NAME}" -c "SELECT 1 as connected;" -t 2>/dev/null); then
             if [[ "$output" == *"1"* ]]; then
-                echo -e "$PASS"
+                log_status_pass "Connected to database '${DB_NAME}'"
                 return 0
             else
-                echo -e "$FAIL"
-                log_error "Unexpected output from database connection"
+                log_status_fail "Unexpected output from database '${DB_NAME}' connection"
                 return 1
             fi
         else
-            echo -e "$FAIL"
-            log_error "Failed to connect to database '${DB_NAME}'"
+            log_status_fail "Failed to connect to database '${DB_NAME}'"
             return 1
         fi
     else
-        echo "Database Test: SKIPPED (using default postgres database)"
+        log_status_skip "Database test (using default postgres database)"
         return 0
     fi
 }
 
 # Test pgbouncer authentication file
 test_pgbouncer_auth() {
-    echo -n "pgbouncer Authentication File: "
-    
     if [ ! -f "/etc/pgbouncer/userlist.txt" ]; then
-        echo -e "$FAIL"
-        log_error "Authentication file not found"
+        log_status_fail "pgbouncer authentication file not found"
         return 1
     fi
     
@@ -137,11 +128,10 @@ test_pgbouncer_auth() {
     owner=$(stat -c "%U:%G" /etc/pgbouncer/userlist.txt 2>/dev/null || stat -f "%Su:%Sg" /etc/pgbouncer/userlist.txt 2>/dev/null)
     
     if [[ ("$permissions" == "640" || "$permissions" == "600") && "$owner" == "postgres:postgres" ]]; then
-        echo -e "$PASS"
+        log_status_pass "pgbouncer authentication file has correct permissions and ownership"
         return 0
     else
-        echo -e "$WARN (permissions: $permissions, owner: $owner)"
-        log_warn "Expected permissions 640/600 and owner postgres:postgres"
+        log_status_warn "pgbouncer authentication file has unusual permissions or ownership (permissions: $permissions, owner: $owner)"
         return 1
     fi
 }
@@ -149,16 +139,14 @@ test_pgbouncer_auth() {
 # Check if firewall is configured as expected
 test_firewall_configuration() {
     if [ "$ENABLE_FIREWALL" = true ]; then
-        echo -n "Firewall Configuration: "
-        
         if ! command -v ufw >/dev/null 2>&1; then
-            echo -e "$FAIL (ufw not installed)"
+            log_status_fail "ufw firewall not installed"
             return 1
         fi
         
         ufw_status=$(ufw status | grep -i active)
         if [ -z "$ufw_status" ]; then
-            echo -e "$WARN (not active)"
+            log_status_warn "Firewall is installed but not active"
             return 1
         fi
         
@@ -168,14 +156,14 @@ test_firewall_configuration() {
         pg_port_blocked=$(ufw status | grep "${DB_PORT}" | grep -i deny)
         
         if [ -n "$pgb_port_open" ] && [ -n "$pg_port_blocked" ]; then
-            echo -e "$PASS"
+            log_status_pass "Firewall correctly allows pgbouncer port ${PGB_LISTEN_PORT} and blocks PostgreSQL port ${DB_PORT}"
             return 0
         else
-            echo -e "$WARN (ports may not be configured correctly)"
+            log_status_warn "Firewall may not be configured correctly for PostgreSQL and pgbouncer ports"
             return 1
         fi
     else
-        echo "Firewall Test: SKIPPED (ENABLE_FIREWALL=false)"
+        log_status_skip "Firewall test (ENABLE_FIREWALL=false)"
         return 0
     fi
 }
@@ -185,32 +173,27 @@ run_tests() {
     local failed=0
     
     # Check services
+    log_info "----- Service Status Tests -----"
     check_postgresql_status || ((failed++))
     check_pgbouncer_status || ((failed++))
     
-    echo "----------------------------------------------"
-    
     # Test connections
+    log_info "----- Connection Tests -----"
     test_direct_connection || true  # Don't increment failure counter for this one
     test_pgbouncer_connection || ((failed++))
     test_database_connection || ((failed++))
     
-    echo "----------------------------------------------"
-    
     # Check configuration
+    log_info "----- Configuration Tests -----"
     test_pgbouncer_auth || ((failed++))
     test_firewall_configuration || true  # Optional test
     
-    echo "=============================================="
     # Summary
     if [ $failed -eq 0 ]; then
-        echo -e "${COLOR_GREEN}ALL TESTS PASSED!${COLOR_RESET}"
-        echo "PostgreSQL and pgbouncer are configured correctly."
+        log_section "ALL TESTS PASSED! PostgreSQL and pgbouncer are configured correctly."
     else
-        echo -e "${COLOR_RED}${failed} TEST(S) FAILED!${COLOR_RESET}"
-        echo "See above for specific test results."
+        log_section "$failed TEST(S) FAILED! See above for details."
     fi
-    echo "=============================================="
     
     return $failed
 }
