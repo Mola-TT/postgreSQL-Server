@@ -53,11 +53,12 @@ main() {
     
     log_debug "Log file: $LOG_FILE"
     
+    # Set timezone first
+    log_info "Setting system timezone..."
+    set_timezone
+    
     # Update system packages
     update_system
-    
-    # Set timezone
-    set_timezone
     
     # Setup PostgreSQL and pgbouncer
     setup_postgresql
