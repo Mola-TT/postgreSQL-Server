@@ -13,8 +13,15 @@ alwaysApply: true
   - Installs pgbouncer for connection pooling
   - Configures PostgreSQL with proper security settings
   - Sets up pgbouncer as middleware
-  - Creates user-specified database and user accounts
+  - Creates user-specified database
   - Configures client authentication based on user-defined IP ranges
+  - Sets and secures PostgreSQL superuser password
+  - Uses environment variables for all configuration settings
+- Updated `init.sh` to include PostgreSQL installation and configuration
+- Enhanced environment configuration:
+  - Added PostgreSQL-specific settings to default.env and user.env.template
+  - Added pgbouncer configuration settings
+  - Added PostgreSQL superuser password management
 
 ## Milestone 1
 
