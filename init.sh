@@ -29,7 +29,6 @@ display_banner() {
     echo "-----------------------------------------------"
     echo "PostgreSQL Server Initialization"
     echo "-----------------------------------------------"
-    log_info "Starting initialization process"
 }
 
 # Main function
@@ -39,7 +38,8 @@ main() {
     # Set timezone first
     set_timezone
     log_info "Set system timezone to $TIMEZONE"
-    
+
+    log_info "Starting initialization process"   
     
     # Load user environment variables if they exist (overrides defaults)
     if [ -f "$SCRIPT_DIR/user.env" ]; then
