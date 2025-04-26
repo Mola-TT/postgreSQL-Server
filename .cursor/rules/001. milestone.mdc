@@ -11,7 +11,11 @@ alwaysApply: true
 - Created `postgresql_config.sh` under setup folder that:
   - Installs PostgreSQL using the official repository
   - Installs pgbouncer for connection pooling
-  - Configures PostgreSQL with proper security settings
+  - Configures PostgreSQL with proper security settings:
+    - Uses secure scram-sha-256 authentication instead of md5
+    - Restricts direct PostgreSQL access to local connections only
+    - Routes all external connections through pgbouncer
+    - Configures firewall to enforce this connection policy
   - Sets up pgbouncer as middleware
   - Creates user-specified database
   - Configures client authentication based on user-defined IP ranges
