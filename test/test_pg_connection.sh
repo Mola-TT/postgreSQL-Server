@@ -5,6 +5,7 @@
 # Find the script directory and import essentials
 SCRIPT_DIR="$(cd "$(dirname "$(dirname "${BASH_SOURCE[0]}")")" && pwd)"
 source "$SCRIPT_DIR/tools/logger.sh"
+source "$SCRIPT_DIR/tools/utilities.sh"
 
 # Load default environment variables
 source "$SCRIPT_DIR/default.env"
@@ -202,6 +203,63 @@ test_firewall_configuration() {
     fi
 }
 
+# Test connection with a temporary user
+test_temp_user_connection() {
+    local temp_user="temp_test_user"
+    local temp_password="temp_password_123"
+    
+    log_info "Creating temporary test user: $temp_user"
+    
+    # Create a temporary user
+    if ! execute_silently "su - postgres -c \"psql -c \\\"CREATE USER $temp_user WITH PASSWORD '$temp_password';\\\"\"" \
+        "" \
+        "Failed to create temporary test user"; then
+        log_status_fail "Could not create temporary test user"
+        return 1
+    fi
+    
+    # Try connecting directly to PostgreSQL with the temporary user
+    if output=$(PGPASSWORD="$temp_password" psql -h localhost -p "${DB_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t 2>/dev/null); then
+        if [[ "$output" == *"temp_user_connected"* ]]; then
+            log_status_pass "Connected to PostgreSQL directly with temporary user"
+            direct_success=true
+        else
+            log_status_warn "Unexpected output from temporary user direct connection"
+            direct_success=false
+        fi
+    else
+        log_status_warn "Failed to connect directly with temporary user (expected if firewall blocks direct access)"
+        direct_success=false
+    fi
+    
+    # Try connecting through pgbouncer with the temporary user
+    if output=$(PGPASSWORD="$temp_password" psql -h localhost -p "${PGB_LISTEN_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t 2>/dev/null); then
+        if [[ "$output" == *"temp_user_connected"* ]]; then
+            log_status_pass "Connected to PostgreSQL through pgbouncer with temporary user"
+            pgbouncer_success=true
+        else
+            log_status_fail "Unexpected output from temporary user pgbouncer connection"
+            pgbouncer_success=false
+        fi
+    else
+        log_status_fail "Failed to connect through pgbouncer with temporary user"
+        pgbouncer_success=false
+    fi
+    
+    # Drop the temporary user
+    log_info "Cleaning up: Removing temporary test user"
+    execute_silently "su - postgres -c \"psql -c \\\"DROP USER IF EXISTS $temp_user;\\\"\"" \
+        "" \
+        "Failed to remove temporary test user" || log_warn "Could not remove temporary test user, manual cleanup needed"
+    
+    # Return success or failure
+    if [ "$pgbouncer_success" = true ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 # Run all tests
 run_tests() {
     local failed=0
@@ -216,6 +274,10 @@ run_tests() {
     test_direct_connection || true  # Don't increment failure counter for this one
     test_pgbouncer_connection || ((failed++))
     test_database_connection || ((failed++))
+    
+    # Test with temporary user
+    log_info "----- Temporary User Test -----"
+    test_temp_user_connection || ((failed++))
     
     # Check configuration
     log_info "----- Configuration Tests -----"
