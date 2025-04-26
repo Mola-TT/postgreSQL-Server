@@ -64,10 +64,15 @@ configure_postgresql() {
         "PostgreSQL configuration backed up" \
         "Failed to backup PostgreSQL configuration" || return 1
     
-    # Configure PostgreSQL to listen on all interfaces
-    execute_silently "sed -i \"s/#listen_addresses = 'localhost'/listen_addresses = '*'/\" ${PG_CONF_DIR}/postgresql.conf" \
+    # Configure PostgreSQL to listen on localhost only for direct connections
+    execute_silently "sed -i \"s/#listen_addresses = 'localhost'/listen_addresses = 'localhost'/\" ${PG_CONF_DIR}/postgresql.conf" \
         "" \
         "Failed to configure PostgreSQL listen_addresses" || return 1
+    
+    # Set password_encryption method to scram-sha-256 (PostgreSQL 10+)
+    execute_silently "sed -i \"s/#password_encryption = md5/password_encryption = '${PG_AUTH_METHOD}'/\" ${PG_CONF_DIR}/postgresql.conf" \
+        "" \
+        "Failed to set password encryption method" || return 1
     
     # Set port
     execute_silently "sed -i \"s/#port = 5432/port = ${DB_PORT}/\" ${PG_CONF_DIR}/postgresql.conf" \
@@ -84,22 +89,21 @@ configure_postgresql() {
         "PostgreSQL superuser password set" \
         "Failed to set PostgreSQL superuser password" || return 1
     
-    # Add entry to allow connections from configured IP ranges
-    if [ "$ALLOWED_IP_RANGES" != "*" ]; then
-        # Split the comma-separated IP ranges and add each one
-        IFS=',' read -ra IP_RANGES <<< "$ALLOWED_IP_RANGES"
-        for ip_range in "${IP_RANGES[@]}"; do
-            execute_silently "echo \"host    all             all             ${ip_range}            md5\" >> ${PG_CONF_DIR}/pg_hba.conf" \
-                "" \
-                "Failed to add ${ip_range} to pg_hba.conf" || return 1
-        done
-        log_info "Added ${#IP_RANGES[@]} IP range(s) to PostgreSQL access control"
-    else
-        # Allow all connections if ALLOWED_IP_RANGES is "*"
-        execute_silently "echo \"host    all             all             0.0.0.0/0            md5\" >> ${PG_CONF_DIR}/pg_hba.conf" \
-            "Configured PostgreSQL to allow connections from any IP (not recommended for production)" \
-            "Failed to configure PostgreSQL client authentication" || return 1
-    fi
+    # Configure local access directly to PostgreSQL with scram-sha-256 auth
+    # First, remove any existing entries
+    execute_silently "grep -v 'host    all' ${PG_CONF_DIR}/pg_hba.conf > ${PG_CONF_DIR}/pg_hba.conf.new && mv ${PG_CONF_DIR}/pg_hba.conf.new ${PG_CONF_DIR}/pg_hba.conf" \
+        "" \
+        "Failed to clean pg_hba.conf" || return 1
+    
+    # Add entry for local connections with scram-sha-256 auth
+    execute_silently "echo \"host    all             all             127.0.0.1/32            ${PG_AUTH_METHOD}\" >> ${PG_CONF_DIR}/pg_hba.conf" \
+        "Configured PostgreSQL for secure local connections" \
+        "Failed to configure PostgreSQL local authentication" || return 1
+    
+    # Add entry for local IPv6 connections
+    execute_silently "echo \"host    all             all             ::1/128                 ${PG_AUTH_METHOD}\" >> ${PG_CONF_DIR}/pg_hba.conf" \
+        "" \
+        "Failed to configure IPv6 authentication" || return 1
     
     # Restart PostgreSQL to apply configuration changes
     execute_silently "systemctl restart postgresql" \
@@ -117,7 +121,7 @@ configure_postgresql() {
 
 # Configure pgbouncer
 configure_pgbouncer() {
-    log_info "Configuring pgbouncer..."
+    log_info "Configuring pgbouncer for external connections..."
     
     # Backup original configuration file
     execute_silently "cp /etc/pgbouncer/pgbouncer.ini /etc/pgbouncer/pgbouncer.ini.bak" \
@@ -145,8 +149,8 @@ default_pool_size = ${PGB_DEFAULT_POOL_SIZE}
 EOL
     
     # Create userlist.txt file for pgbouncer authentication
-    # The MD5 hash includes the username as part of the hash calculation
-    execute_silently "echo \"\\\"postgres\\\" \\\"md5$(echo -n "${PG_SUPERUSER_PASSWORD}postgres" | md5sum | cut -d' ' -f1)\\\"\"> /etc/pgbouncer/userlist.txt" \
+    # For scram-sha-256, we need to get the hashed password format from PostgreSQL
+    execute_silently "su - postgres -c \"psql -t -c \\\"SELECT concat('\\\"', usename, '\\\" \\\"', passwd, '\\\"') FROM pg_shadow WHERE usename='postgres';\\\"\" > /etc/pgbouncer/userlist.txt\"" \
         "pgbouncer authentication configured for postgres user" \
         "Failed to create pgbouncer userlist.txt" || return 1
     
@@ -158,6 +162,48 @@ EOL
     execute_silently "chmod 640 /etc/pgbouncer/userlist.txt" \
         "" \
         "Failed to set permissions on pgbouncer userlist.txt" || return 1
+    
+    # Configure firewall to route external connections through pgbouncer
+    if [ "$ENABLE_FIREWALL" = true ]; then
+        log_info "Configuring firewall for PostgreSQL and pgbouncer..."
+        
+        # Install ufw if not already installed
+        execute_silently "apt-get install -y ufw" \
+            "" \
+            "Failed to install ufw firewall" || return 1
+        
+        # Allow SSH to prevent lockout
+        execute_silently "ufw allow ssh" \
+            "" \
+            "Failed to configure firewall for SSH" || return 1
+        
+        # Open pgbouncer port for external connections
+        if [ "$ALLOWED_IP_RANGES" != "*" ]; then
+            # Split the comma-separated IP ranges and add each one
+            IFS=',' read -ra IP_RANGES <<< "$ALLOWED_IP_RANGES"
+            for ip_range in "${IP_RANGES[@]}"; do
+                execute_silently "ufw allow from ${ip_range} to any port ${PGB_LISTEN_PORT}" \
+                    "" \
+                    "Failed to configure firewall for pgbouncer from ${ip_range}" || return 1
+            done
+            log_info "Firewall configured to allow connections to pgbouncer from ${#IP_RANGES[@]} IP range(s)"
+        else
+            # Allow from any IP if ALLOWED_IP_RANGES is "*"
+            execute_silently "ufw allow ${PGB_LISTEN_PORT}/tcp" \
+                "Firewall configured to allow connections to pgbouncer from any IP (not recommended for production)" \
+                "Failed to configure firewall for pgbouncer" || return 1
+        fi
+        
+        # Block external access to PostgreSQL's direct port for security
+        execute_silently "ufw deny ${DB_PORT}/tcp" \
+            "Firewall configured to block direct external access to PostgreSQL" \
+            "Failed to configure firewall to block PostgreSQL" || return 1
+        
+        # Enable firewall
+        execute_silently "echo y | ufw enable" \
+            "Firewall enabled" \
+            "Failed to enable firewall" || return 1
+    fi
     
     # Restart pgbouncer to apply configuration changes
     execute_silently "systemctl restart pgbouncer" \
@@ -182,6 +228,8 @@ setup_postgresql() {
     configure_pgbouncer || return 1
     
     log_info "PostgreSQL and pgbouncer setup completed successfully"
+    log_info "  - PostgreSQL is configured for direct local access on port ${DB_PORT}"
+    log_info "  - pgbouncer is configured for external access on port ${PGB_LISTEN_PORT}"
     return 0
 }
 
