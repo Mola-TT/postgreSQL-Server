@@ -38,7 +38,7 @@ main() {
         log_info "Loading user environment variables from user.env"
         source "$SCRIPT_DIR/user.env"
     else
-        log_info "No user.env file found, using default settings only"
+        log_info "No user.env file found. Use default settings"
         log_info "You can create user.env by copying user.env.template and modifying it"
     fi
 
