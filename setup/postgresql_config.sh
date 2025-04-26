@@ -76,6 +76,16 @@ configure_postgresql() {
     execute_silently "sed -i \"s/#password_encryption = md5/password_encryption = '${PG_AUTH_METHOD}'/\" ${PG_CONF_DIR}/postgresql.conf" \
         "" \
         "Failed to set password encryption method" || return 1
+        
+    # Configure SSL mode to be optional but available
+    execute_silently "sed -i \"s/#ssl = off/ssl = on/\" ${PG_CONF_DIR}/postgresql.conf" \
+        "" \
+        "Failed to enable SSL" || return 1
+        
+    # Set SSL cipher configuration for compatibility
+    execute_silently "sed -i \"s/#ssl_ciphers = .*/ssl_ciphers = 'HIGH:MEDIUM:+3DES:!aNULL'/\" ${PG_CONF_DIR}/postgresql.conf" \
+        "" \
+        "Failed to set SSL ciphers" || return 1
     
     # Set port
     execute_silently "sed -i \"s/#port = 5432/port = ${DB_PORT}/\" ${PG_CONF_DIR}/postgresql.conf" \
@@ -100,13 +110,23 @@ configure_postgresql() {
     
     # Add entry for local connections with scram-sha-256 auth
     execute_silently "echo \"host    all             all             127.0.0.1/32            ${PG_AUTH_METHOD}\" >> ${PG_CONF_DIR}/pg_hba.conf" \
-        "Configured PostgreSQL for secure local connections" \
+        "Configured PostgreSQL for local connections with ${PG_AUTH_METHOD} auth" \
         "Failed to configure PostgreSQL local authentication" || return 1
     
     # Add entry for local IPv6 connections
     execute_silently "echo \"host    all             all             ::1/128                 ${PG_AUTH_METHOD}\" >> ${PG_CONF_DIR}/pg_hba.conf" \
         "" \
         "Failed to configure IPv6 authentication" || return 1
+    
+    # Add entry for local connections with SSL
+    execute_silently "echo \"hostssl all             all             127.0.0.1/32            ${PG_AUTH_METHOD}\" >> ${PG_CONF_DIR}/pg_hba.conf" \
+        "Configured PostgreSQL for SSL connections" \
+        "Failed to configure PostgreSQL SSL authentication" || return 1
+        
+    # Add special entry for pgbouncer auth_user to access password data
+    execute_silently "echo \"host    postgres        postgres        127.0.0.1/32            ${PG_AUTH_METHOD}\" >> ${PG_CONF_DIR}/pg_hba.conf" \
+        "Configured PostgreSQL for pgbouncer access" \
+        "Failed to configure PostgreSQL pgbouncer authentication" || return 1
     
     # Restart PostgreSQL to apply configuration changes
     execute_silently "systemctl restart postgresql" \
@@ -131,16 +151,18 @@ configure_pgbouncer() {
         "pgbouncer configuration backed up" \
         "Failed to backup pgbouncer configuration" || return 1
     
-    # Configure pgbouncer
+    # Configure pgbouncer to work with scram-sha-256
     cat > /etc/pgbouncer/pgbouncer.ini <<EOL
 [databases]
-* = host=127.0.0.1 port=${DB_PORT} dbname=\${DATABASE} user=postgres
+* = host=127.0.0.1 port=${DB_PORT} dbname=\${DATABASE} user=postgres auth_user=postgres
 
 [pgbouncer]
 listen_addr = ${PGB_LISTEN_ADDR}
 listen_port = ${PGB_LISTEN_PORT}
-auth_type = ${PGB_AUTH_TYPE}
+auth_type = scram-sha-256
 auth_file = /etc/pgbouncer/userlist.txt
+auth_query = SELECT usename, passwd FROM pg_shadow WHERE usename=\$1
+auth_dbname = postgres
 logfile = /var/log/postgresql/pgbouncer.log
 pidfile = /var/run/postgresql/pgbouncer.pid
 admin_users = postgres
@@ -149,6 +171,7 @@ pool_mode = ${PGB_POOL_MODE}
 server_reset_query = DISCARD ALL
 max_client_conn = ${PGB_MAX_CLIENT_CONN}
 default_pool_size = ${PGB_DEFAULT_POOL_SIZE}
+server_tls_sslmode = prefer
 EOL
     
     log_info "Creating pgbouncer authentication file..."
@@ -171,11 +194,12 @@ EOL
     local random_str=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 8)
     local auth_temp_file="/var/lib/postgresql/tmp/pgbouncer_auth_${timestamp}_${random_str}.txt"
     
-    # Have postgres user create the authentication file directly
-    if su - postgres -c "psql -t -c \"COPY (SELECT '\\\"postgres\\\" \\\"' || passwd || '\\\"' FROM pg_shadow WHERE usename='postgres') TO STDOUT\" > \"$auth_temp_file\" 2>/dev/null"; then
+    # Extract the password hash directly using PostgreSQL (must be run after user password is set)
+    log_info "Extracting SCRAM-SHA-256 password hash for pgbouncer"
+    
+    # Have postgres create the auth file with the correct format for pgbouncer's scram-sha-256
+    if su - postgres -c "psql -t -c \"SELECT concat('\\\"', usename, '\\\" \\\"', passwd, '\\\"') FROM pg_shadow WHERE usename='postgres'\" > \"$auth_temp_file\"" 2>/dev/null; then
         if [ -s "$auth_temp_file" ]; then
-            log_info "Successfully extracted password hash"
-            
             # Copy to final location and set permissions
             execute_silently "cp ${auth_temp_file} /etc/pgbouncer/userlist.txt" \
                 "" \
@@ -185,20 +209,18 @@ EOL
                 "" \
                 "Failed to set ownership on pgbouncer userlist.txt" || return 1
             
-            execute_silently "chmod 640 /etc/pgbouncer/userlist.txt" \
-                "pgbouncer authentication configured successfully with ${PGB_AUTH_TYPE}" \
+            execute_silently "chmod 600 /etc/pgbouncer/userlist.txt" \
+                "pgbouncer authentication configured successfully with SCRAM-SHA-256" \
                 "Failed to set permissions on pgbouncer userlist.txt" || return 1
                 
             # Clean up temp file
             su - postgres -c "rm -f \"$auth_temp_file\"" 2>/dev/null
         else
-            log_warn "Password hash extraction succeeded but produced an empty file, falling back to plain auth"
-            # Fall back to plain auth
+            log_warn "Password hash extraction returned empty file, falling back to plain auth"
             configure_pgbouncer_plain_auth
         fi
     else
-        log_warn "Failed to extract secure password hash, falling back to plain auth"
-        # Fall back to plain auth
+        log_warn "Failed to extract password hash, falling back to plain auth"
         configure_pgbouncer_plain_auth
     fi
     
