@@ -150,7 +150,10 @@ configure_pgbouncer() {
         "pgbouncer configuration backed up" \
         "Failed to backup pgbouncer configuration" || return 1
     
-    # Configure pgbouncer to work with scram-sha-256
+    # Configure pgbouncer with the specified authentication type
+    log_info "Setting up pgbouncer with ${PGB_AUTH_TYPE} authentication"
+    
+    # Configure pgbouncer to work with the specified authentication type
     cat > /etc/pgbouncer/pgbouncer.ini <<EOL
 [databases]
 * = host=127.0.0.1 port=${DB_PORT} dbname=\${DATABASE}
@@ -158,10 +161,10 @@ configure_pgbouncer() {
 [pgbouncer]
 listen_addr = ${PGB_LISTEN_ADDR}
 listen_port = ${PGB_LISTEN_PORT}
-auth_type = scram-sha-256
+auth_type = ${PGB_AUTH_TYPE}
 auth_file = /etc/pgbouncer/userlist.txt
 auth_user = postgres
-auth_query = SELECT usename, passwd FROM pg_shadow WHERE usename=\$1
+auth_query = SELECT rolname as usename, rolpassword as passwd FROM pg_authid WHERE rolname=\$1
 auth_dbname = postgres
 logfile = /var/log/postgresql/pgbouncer.log
 pidfile = /var/run/postgresql/pgbouncer.pid
@@ -192,7 +195,19 @@ EOL
     
     # Extract password hash using our pg_extract_hash tool
     log_info "Extracting password hash for pgbouncer authentication"
-    extract_hash "postgres" "/etc/pgbouncer/userlist.txt" || return 1
+    if ! extract_hash "postgres" "/etc/pgbouncer/userlist.txt"; then
+        log_warn "Failed to extract password hash with ${PGB_AUTH_TYPE} authentication"
+        
+        if [ "${PGB_AUTH_TYPE}" != "plain" ]; then
+            log_warn "Falling back to plain text authentication"
+            
+            # Fall back to plain auth
+            configure_pgbouncer_plain_auth || return 1
+        else
+            log_error "Authentication setup failed"
+            return 1
+        fi
+    fi
     
     # Set proper permissions for the auth file
     execute_silently "chown postgres:postgres /etc/pgbouncer/userlist.txt" \
@@ -200,7 +215,7 @@ EOL
         "Failed to set ownership on pgbouncer userlist.txt" || return 1
 
     execute_silently "chmod 600 /etc/pgbouncer/userlist.txt" \
-        "pgbouncer authentication configured successfully with SCRAM-SHA-256" \
+        "pgbouncer authentication configured successfully with ${PGB_AUTH_TYPE}" \
         "Failed to set permissions on pgbouncer userlist.txt" || return 1
     
     # Configure firewall to route external connections through pgbouncer
@@ -253,10 +268,18 @@ EOL
 
 # Helper function for plain auth fallback
 configure_pgbouncer_plain_auth() {
-    # Update config file to use plain auth
+    # Update config file to use plain auth instead of scram-sha-256
+    # This is only used as a fallback if hash extraction fails
+    # As per https://www.cybertec-postgresql.com/en/pgbouncer-authentication-made-easy/
+    # plain auth is simpler but less secure
     execute_silently "sed -i 's/auth_type = .*/auth_type = plain/' /etc/pgbouncer/pgbouncer.ini" \
         "" \
         "Failed to update pgbouncer auth type" || return 1
+        
+    # Update the auth_query to use appropriate fields for plain auth
+    execute_silently "sed -i 's/auth_query = .*/auth_query = SELECT usename, passwd FROM pg_shadow WHERE usename=\\\$1/' /etc/pgbouncer/pgbouncer.ini" \
+        "" \
+        "Failed to update pgbouncer auth query for plain auth" || return 1
         
     # Create userlist with plain password
     execute_silently "echo \"\\\"postgres\\\" \\\"${PG_SUPERUSER_PASSWORD}\\\"\" > /etc/pgbouncer/userlist.txt" \
@@ -269,7 +292,7 @@ configure_pgbouncer_plain_auth() {
         "Failed to set ownership on pgbouncer userlist.txt" || return 1
     
     execute_silently "chmod 600 /etc/pgbouncer/userlist.txt" \
-        "pgbouncer configured with fallback plain authentication" \
+        "pgbouncer configured with fallback plain authentication (instead of ${PGB_AUTH_TYPE})" \
         "Failed to set permissions on pgbouncer userlist.txt" || return 1
         
     return 0
