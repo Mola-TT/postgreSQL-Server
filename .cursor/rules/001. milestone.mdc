@@ -5,7 +5,16 @@ alwaysApply: true
 ---
 # Milestone
 
-## Current Progress: Milestone 1
+## Current Progress: Milestone 2
+
+## Milestone 2
+- Created `postgresql_config.sh` under setup folder that:
+  - Installs PostgreSQL using the official repository
+  - Installs pgbouncer for connection pooling
+  - Configures PostgreSQL with proper security settings
+  - Sets up pgbouncer as middleware
+  - Creates user-specified database and user accounts
+  - Configures client authentication based on user-defined IP ranges
 
 ## Milestone 1
 
@@ -37,5 +46,13 @@ alwaysApply: true
    - Added system update functionality
    - Added timezone configuration
 
+## Original Objectives
 
+1. Create an `init.sh` script to update the Ubuntu server silently
+2. Create a `logger.sh` script to provide a logging function
+   - Log messages should be white in color by default
+   - Timestamps in logs should be bold
+   - Only log level text and log level should have color formatting
+3. Create a `user.env` file for entering user variables
+4. Create a `default.env` file for default variables
 
