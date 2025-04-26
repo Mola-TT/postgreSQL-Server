@@ -151,53 +151,56 @@ max_client_conn = ${PGB_MAX_CLIENT_CONN}
 default_pool_size = ${PGB_DEFAULT_POOL_SIZE}
 EOL
     
-    # Using our robust password hash extraction tool
     log_info "Creating pgbouncer authentication file..."
     
-    # Create a temporary file to store the password hash
-    local auth_temp_file=$(mktemp)
+    # Create a postgres-owned directory for temporary files if it doesn't exist
+    execute_silently "mkdir -p /var/lib/postgresql/tmp" \
+        "" \
+        "Failed to create temporary directory" || return 1
     
-    # Use our specialized extraction function
-    if extract_hash "postgres" "$auth_temp_file"; then
-        # Success - copy the file to its final location
-        execute_silently "cp ${auth_temp_file} /etc/pgbouncer/userlist.txt" \
-            "" \
-            "Failed to copy pgbouncer userlist" || return 1
+    execute_silently "chown postgres:postgres /var/lib/postgresql/tmp" \
+        "" \
+        "Failed to set ownership on temporary directory" || return 1
+    
+    execute_silently "chmod 700 /var/lib/postgresql/tmp" \
+        "" \
+        "Failed to set permissions on temporary directory" || return 1
+    
+    # Generate a secure random filename that postgres can write to
+    local timestamp=$(date +%s)
+    local random_str=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 8)
+    local auth_temp_file="/var/lib/postgresql/tmp/pgbouncer_auth_${timestamp}_${random_str}.txt"
+    
+    # Have postgres user create the authentication file directly
+    if su - postgres -c "psql -t -c \"COPY (SELECT '\\\"postgres\\\" \\\"' || passwd || '\\\"' FROM pg_shadow WHERE usename='postgres') TO STDOUT\" > \"$auth_temp_file\" 2>/dev/null"; then
+        if [ -s "$auth_temp_file" ]; then
+            log_info "Successfully extracted password hash"
             
-        # Set proper permissions
-        execute_silently "chown postgres:postgres /etc/pgbouncer/userlist.txt" \
-            "" \
-            "Failed to set ownership on pgbouncer userlist.txt" || return 1
-        
-        execute_silently "chmod 640 /etc/pgbouncer/userlist.txt" \
-            "pgbouncer authentication configured successfully with ${PGB_AUTH_TYPE}" \
-            "Failed to set permissions on pgbouncer userlist.txt" || return 1
+            # Copy to final location and set permissions
+            execute_silently "cp ${auth_temp_file} /etc/pgbouncer/userlist.txt" \
+                "" \
+                "Failed to copy pgbouncer userlist" || return 1
+                
+            execute_silently "chown postgres:postgres /etc/pgbouncer/userlist.txt" \
+                "" \
+                "Failed to set ownership on pgbouncer userlist.txt" || return 1
+            
+            execute_silently "chmod 640 /etc/pgbouncer/userlist.txt" \
+                "pgbouncer authentication configured successfully with ${PGB_AUTH_TYPE}" \
+                "Failed to set permissions on pgbouncer userlist.txt" || return 1
+                
+            # Clean up temp file
+            su - postgres -c "rm -f \"$auth_temp_file\"" 2>/dev/null
+        else
+            log_warn "Password hash extraction succeeded but produced an empty file, falling back to plain auth"
+            # Fall back to plain auth
+            configure_pgbouncer_plain_auth
+        fi
     else
-        # Extraction failed, fall back to plain auth as a last resort
         log_warn "Failed to extract secure password hash, falling back to plain auth"
-        
-        # Update config file to use plain auth
-        execute_silently "sed -i 's/auth_type = .*/auth_type = plain/' /etc/pgbouncer/pgbouncer.ini" \
-            "" \
-            "Failed to update pgbouncer auth type" || return 1
-            
-        # Create userlist with plain password
-        execute_silently "echo \"\\\"postgres\\\" \\\"${PG_SUPERUSER_PASSWORD}\\\"\" > /etc/pgbouncer/userlist.txt" \
-            "" \
-            "Failed to create pgbouncer userlist with plain auth" || return 1
-            
-        # Set more restrictive permissions for plain text
-        execute_silently "chown postgres:postgres /etc/pgbouncer/userlist.txt" \
-            "" \
-            "Failed to set ownership on pgbouncer userlist.txt" || return 1
-        
-        execute_silently "chmod 600 /etc/pgbouncer/userlist.txt" \
-            "pgbouncer configured with fallback plain authentication" \
-            "Failed to set permissions on pgbouncer userlist.txt" || return 1
+        # Fall back to plain auth
+        configure_pgbouncer_plain_auth
     fi
-    
-    # Clean up
-    rm -f "$auth_temp_file"
     
     # Configure firewall to route external connections through pgbouncer
     if [ "$ENABLE_FIREWALL" = true ]; then
@@ -247,6 +250,30 @@ EOL
         "Failed to restart pgbouncer service" || return 1
 }
 
+# Helper function for plain auth fallback
+configure_pgbouncer_plain_auth() {
+    # Update config file to use plain auth
+    execute_silently "sed -i 's/auth_type = .*/auth_type = plain/' /etc/pgbouncer/pgbouncer.ini" \
+        "" \
+        "Failed to update pgbouncer auth type" || return 1
+        
+    # Create userlist with plain password
+    execute_silently "echo \"\\\"postgres\\\" \\\"${PG_SUPERUSER_PASSWORD}\\\"\" > /etc/pgbouncer/userlist.txt" \
+        "" \
+        "Failed to create pgbouncer userlist with plain auth" || return 1
+        
+    # Set more restrictive permissions for plain text
+    execute_silently "chown postgres:postgres /etc/pgbouncer/userlist.txt" \
+        "" \
+        "Failed to set ownership on pgbouncer userlist.txt" || return 1
+    
+    execute_silently "chmod 600 /etc/pgbouncer/userlist.txt" \
+        "pgbouncer configured with fallback plain authentication" \
+        "Failed to set permissions on pgbouncer userlist.txt" || return 1
+        
+    return 0
+}
+
 # Setup PostgreSQL with pgbouncer
 setup_postgresql() {
     log_info "Starting PostgreSQL and pgbouncer setup..."
@@ -274,4 +301,5 @@ export -f install_postgresql
 export -f install_pgbouncer
 export -f configure_postgresql
 export -f configure_pgbouncer
+export -f configure_pgbouncer_plain_auth
 export -f setup_postgresql 
