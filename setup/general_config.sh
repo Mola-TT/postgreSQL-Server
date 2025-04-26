@@ -25,16 +25,13 @@ update_system() {
 }
 
 # Set timezone
-set_timezone() {
-    log_info "Setting timezone to $TIMEZONE"
-    
+set_timezone() {    
     execute_silently "timedatectl set-timezone \"$TIMEZONE\"" \
         "" \
         "Failed to set timezone to $TIMEZONE" || return 1
     
     # Get current timezone
     current_tz=$(timedatectl | grep "Time zone" | awk '{print $3}')
-    log_info "Timezone set to $current_tz"
 }
 
 # Export functions
