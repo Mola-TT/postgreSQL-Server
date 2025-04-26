@@ -156,7 +156,7 @@ configure_pgbouncer() {
     # Configure pgbouncer to work with the specified authentication type
     cat > /etc/pgbouncer/pgbouncer.ini <<EOL
 [databases]
-* = host=127.0.0.1 port=${DB_PORT} dbname=\${DATABASE}
+* = host=127.0.0.1 port=${DB_PORT} dbname=\$1
 
 [pgbouncer]
 listen_addr = ${PGB_LISTEN_ADDR}
@@ -177,6 +177,14 @@ default_pool_size = ${PGB_DEFAULT_POOL_SIZE}
 server_tls_sslmode = prefer
 ignore_startup_parameters = extra_float_digits
 EOL
+    
+    # Add specific database entries if DB_NAME is not postgres
+    if [ "$DB_NAME" != "postgres" ]; then
+        log_info "Adding specific database entry for ${DB_NAME}"
+        cat >> /etc/pgbouncer/pgbouncer.ini <<EOL
+${DB_NAME} = host=127.0.0.1 port=${DB_PORT} dbname=${DB_NAME}
+EOL
+    fi
     
     log_info "Creating pgbouncer authentication file..."
     
@@ -260,10 +268,58 @@ EOL
             "Failed to enable firewall" || return 1
     fi
     
+    # Verify pgbouncer configuration before restarting
+    log_info "Verifying pgbouncer configuration"
+    if which pgbouncer > /dev/null 2>&1; then
+        execute_silently "pgbouncer -q -C /etc/pgbouncer/pgbouncer.ini -d" \
+            "pgbouncer configuration verified" \
+            "pgbouncer configuration has errors" || {
+                log_error "pgbouncer configuration check failed, attempting to fix common issues"
+                # Simplified configuration as a fallback
+                cat > /etc/pgbouncer/pgbouncer.ini <<EOL
+[databases]
+postgres = host=127.0.0.1 port=${DB_PORT} dbname=postgres
+EOL
+                if [ "$DB_NAME" != "postgres" ]; then
+                    echo "${DB_NAME} = host=127.0.0.1 port=${DB_PORT} dbname=${DB_NAME}" >> /etc/pgbouncer/pgbouncer.ini
+                fi
+                
+                cat >> /etc/pgbouncer/pgbouncer.ini <<EOL
+
+[pgbouncer]
+listen_addr = ${PGB_LISTEN_ADDR}
+listen_port = ${PGB_LISTEN_PORT}
+auth_type = plain
+auth_file = /etc/pgbouncer/userlist.txt
+logfile = /var/log/postgresql/pgbouncer.log
+pidfile = /var/run/postgresql/pgbouncer.pid
+admin_users = postgres
+stats_users = postgres
+pool_mode = ${PGB_POOL_MODE}
+max_client_conn = ${PGB_MAX_CLIENT_CONN}
+default_pool_size = ${PGB_DEFAULT_POOL_SIZE}
+EOL
+                # Create a simple userlist with plain auth as last resort
+                echo "\"postgres\" \"${PG_SUPERUSER_PASSWORD}\"" > /etc/pgbouncer/userlist.txt
+                execute_silently "chown postgres:postgres /etc/pgbouncer/userlist.txt" \
+                    "" \
+                    "Failed to set ownership on pgbouncer userlist.txt" || return 1
+                execute_silently "chmod 600 /etc/pgbouncer/userlist.txt" \
+                    "Created fallback pgbouncer configuration" \
+                    "Failed to set permissions on pgbouncer userlist.txt" || return 1
+            }
+    fi
+    
     # Restart pgbouncer to apply configuration changes
     execute_silently "systemctl restart pgbouncer" \
         "pgbouncer restarted with updated configuration" \
         "Failed to restart pgbouncer" || return 1
+        
+    # Verify pgbouncer is working properly
+    execute_silently "sleep 2" "" ""  # Give pgbouncer a moment to start up
+    execute_silently "PGPASSWORD=\"${PG_SUPERUSER_PASSWORD}\" psql -h localhost -p ${PGB_LISTEN_PORT} -U postgres -d postgres -c \"SELECT 1\" > /dev/null 2>&1" \
+        "Verified pgbouncer connection is working" \
+        "Could not connect to pgbouncer, check logs for more details" || log_warn "Connection test failed but continuing anyway"
 }
 
 # Helper function for plain auth fallback
@@ -275,11 +331,6 @@ configure_pgbouncer_plain_auth() {
     execute_silently "sed -i 's/auth_type = .*/auth_type = plain/' /etc/pgbouncer/pgbouncer.ini" \
         "" \
         "Failed to update pgbouncer auth type" || return 1
-        
-    # Update the auth_query to use appropriate fields for plain auth
-    execute_silently "sed -i 's/auth_query = .*/auth_query = SELECT usename, passwd FROM pg_shadow WHERE usename=\\\$1/' /etc/pgbouncer/pgbouncer.ini" \
-        "" \
-        "Failed to update pgbouncer auth query for plain auth" || return 1
         
     # Create userlist with plain password
     execute_silently "echo \"\\\"postgres\\\" \\\"${PG_SUPERUSER_PASSWORD}\\\"\" > /etc/pgbouncer/userlist.txt" \

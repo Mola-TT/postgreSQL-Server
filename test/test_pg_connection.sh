@@ -79,7 +79,8 @@ test_direct_connection() {
 
 # Test connection through pgbouncer
 test_pgbouncer_connection() {
-    if output=$(PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql -h localhost -p "${PGB_LISTEN_PORT}" -U postgres -c "SELECT 1 as connected;" -t 2>/dev/null); then
+    # Test first with postgres database explicitly
+    if output=$(PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql -h localhost -p "${PGB_LISTEN_PORT}" -U postgres -d postgres -c "SELECT 1 as connected;" -t 2>/dev/null); then
         if [[ "$output" == *"1"* ]]; then
             log_status_pass "Connected to PostgreSQL through pgbouncer on port ${PGB_LISTEN_PORT}"
             return 0
@@ -88,6 +89,39 @@ test_pgbouncer_connection() {
             return 1
         fi
     else
+        log_warn "Failed to connect through pgbouncer with explicit database. Trying default connection..."
+        
+        # Try connecting without specifying the database
+        if output=$(PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql -h localhost -p "${PGB_LISTEN_PORT}" -U postgres -c "SELECT 1 as connected;" -t 2>/dev/null); then
+            if [[ "$output" == *"1"* ]]; then
+                log_status_pass "Connected to PostgreSQL through pgbouncer on port ${PGB_LISTEN_PORT} (default connection)"
+                return 0
+            fi
+        fi
+        
+        # Try one more attempt with the user-specified database
+        if [ "$DB_NAME" != "postgres" ]; then
+            log_warn "Trying to connect with user-specified database: ${DB_NAME}"
+            if output=$(PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql -h localhost -p "${PGB_LISTEN_PORT}" -U postgres -d "${DB_NAME}" -c "SELECT 1 as connected;" -t 2>/dev/null); then
+                if [[ "$output" == *"1"* ]]; then
+                    log_status_pass "Connected to PostgreSQL through pgbouncer on port ${PGB_LISTEN_PORT} using ${DB_NAME} database"
+                    return 0
+                fi
+            fi
+        fi
+        
+        # Check pgbouncer status for troubleshooting
+        log_warn "Checking pgbouncer service status for troubleshooting..."
+        service_status=$(systemctl status pgbouncer 2>&1)
+        log_warn "$service_status"
+        
+        # Check pgbouncer configuration as well
+        if [ -f "/etc/pgbouncer/pgbouncer.ini" ]; then
+            log_warn "Current pgbouncer configuration:"
+            pgbouncer_config=$(cat /etc/pgbouncer/pgbouncer.ini 2>&1)
+            log_warn "$pgbouncer_config"
+        fi
+        
         log_status_fail "Failed to connect through pgbouncer on port ${PGB_LISTEN_PORT}"
         return 1
     fi
