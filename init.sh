@@ -35,6 +35,11 @@ display_banner() {
 # Main function
 main() {
     display_banner
+
+    # Set timezone first
+    set_timezone
+    log_info "Set system timezone to $TIMEZONE"
+    
     
     # Load user environment variables if they exist (overrides defaults)
     if [ -f "$SCRIPT_DIR/user.env" ]; then
@@ -52,10 +57,6 @@ main() {
     fi
     
     log_debug "Log file: $LOG_FILE"
-    
-    # Set timezone first
-    log_info "Setting system timezone..."
-    set_timezone
     
     # Update system packages
     update_system
