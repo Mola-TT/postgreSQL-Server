@@ -148,11 +148,29 @@ max_client_conn = ${PGB_MAX_CLIENT_CONN}
 default_pool_size = ${PGB_DEFAULT_POOL_SIZE}
 EOL
     
-    # Create userlist.txt file for pgbouncer authentication
-    # For scram-sha-256, we need to get the hashed password format from PostgreSQL
-    execute_silently "su - postgres -c \"psql -t -c \\\"SELECT concat('\\\"', usename, '\\\" \\\"', passwd, '\\\"') FROM pg_shadow WHERE usename='postgres';\\\"\" > /etc/pgbouncer/userlist.txt\"" \
-        "pgbouncer authentication configured for postgres user" \
-        "Failed to create pgbouncer userlist.txt" || return 1
+    # Create a simpler temp file first
+    log_info "Creating pgbouncer authentication file..."
+    TEMP_AUTH_FILE=$(mktemp)
+
+    # Generate the userlist.txt content in a simpler way - first get the hashed password
+    if [ "${PG_AUTH_METHOD}" = "scram-sha-256" ]; then
+        # For SCRAM-SHA-256, we'll get the hash directly from PostgreSQL
+        execute_silently "su - postgres -c \"psql -t -c \\\"SELECT concat('\\\"postgres\\\" \\\"', passwd, '\\\"') FROM pg_shadow WHERE usename='postgres';\\\"\" > ${TEMP_AUTH_FILE}\"" \
+            "" \
+            "Failed to retrieve PostgreSQL password hash" || return 1
+    else
+        # Fallback for md5 authentication
+        MD5_PASS=$(echo -n "${PG_SUPERUSER_PASSWORD}postgres" | md5sum | cut -d' ' -f1)
+        echo "\"postgres\" \"md5${MD5_PASS}\"" > ${TEMP_AUTH_FILE}
+    fi
+
+    # Now copy the temp file to the actual location and set permissions
+    execute_silently "cp ${TEMP_AUTH_FILE} /etc/pgbouncer/userlist.txt" \
+        "" \
+        "Failed to copy pgbouncer userlist" || return 1
+
+    # Cleanup temp file
+    rm -f ${TEMP_AUTH_FILE}
     
     # Set proper permissions
     execute_silently "chown postgres:postgres /etc/pgbouncer/userlist.txt" \
@@ -160,7 +178,7 @@ EOL
         "Failed to set permissions on pgbouncer userlist.txt" || return 1
     
     execute_silently "chmod 640 /etc/pgbouncer/userlist.txt" \
-        "" \
+        "pgbouncer authentication configured successfully" \
         "Failed to set permissions on pgbouncer userlist.txt" || return 1
     
     # Configure firewall to route external connections through pgbouncer
