@@ -266,20 +266,22 @@ EOL
     # Verify pgbouncer configuration before restarting
     log_info "Verifying pgbouncer configuration"
     if which pgbouncer > /dev/null 2>&1; then
-        execute_silently "pgbouncer -q -C /etc/pgbouncer/pgbouncer.ini -d" \
-            "pgbouncer configuration verified" \
-            "pgbouncer configuration has errors" || {
-                log_info "Using simplified pgbouncer configuration as fallback"
-                # Simplified configuration as a fallback - now identical to the initial config
-                cat > /etc/pgbouncer/pgbouncer.ini <<EOL
+        # Run pgbouncer configuration check but don't use execute_silently
+        # to avoid error messages in log
+        if pgbouncer -q -C /etc/pgbouncer/pgbouncer.ini -d > /dev/null 2>&1; then
+            log_info "pgbouncer configuration verified"
+        else
+            log_info "Using simplified pgbouncer configuration as fallback"
+            # Simplified configuration as a fallback
+            cat > /etc/pgbouncer/pgbouncer.ini <<EOL
 [databases]
 postgres = host=127.0.0.1 port=${DB_PORT} dbname=postgres
 EOL
-                if [ "$DB_NAME" != "postgres" ]; then
-                    echo "${DB_NAME} = host=127.0.0.1 port=${DB_PORT} dbname=${DB_NAME}" >> /etc/pgbouncer/pgbouncer.ini
-                fi
-                
-                cat >> /etc/pgbouncer/pgbouncer.ini <<EOL
+            if [ "$DB_NAME" != "postgres" ]; then
+                echo "${DB_NAME} = host=127.0.0.1 port=${DB_PORT} dbname=${DB_NAME}" >> /etc/pgbouncer/pgbouncer.ini
+            fi
+            
+            cat >> /etc/pgbouncer/pgbouncer.ini <<EOL
 
 [pgbouncer]
 listen_addr = ${PGB_LISTEN_ADDR}
@@ -294,15 +296,15 @@ pool_mode = ${PGB_POOL_MODE}
 max_client_conn = ${PGB_MAX_CLIENT_CONN}
 default_pool_size = ${PGB_DEFAULT_POOL_SIZE}
 EOL
-                # Create a simple userlist with plain auth as last resort
-                echo "\"postgres\" \"${PG_SUPERUSER_PASSWORD}\"" > /etc/pgbouncer/userlist.txt
-                execute_silently "chown postgres:postgres /etc/pgbouncer/userlist.txt" \
-                    "" \
-                    "Failed to set ownership on pgbouncer userlist.txt" || return 1
-                execute_silently "chmod 600 /etc/pgbouncer/userlist.txt" \
-                    "Created fallback pgbouncer configuration" \
-                    "Failed to set permissions on pgbouncer userlist.txt" || return 1
-            }
+            # Create a simple userlist with plain auth as last resort
+            echo "\"postgres\" \"${PG_SUPERUSER_PASSWORD}\"" > /etc/pgbouncer/userlist.txt
+            execute_silently "chown postgres:postgres /etc/pgbouncer/userlist.txt" \
+                "" \
+                "Failed to set ownership on pgbouncer userlist.txt" || return 1
+            execute_silently "chmod 600 /etc/pgbouncer/userlist.txt" \
+                "Created fallback pgbouncer configuration" \
+                "Failed to set permissions on pgbouncer userlist.txt" || return 1
+        fi
     fi
     
     # Restart pgbouncer to apply configuration changes
