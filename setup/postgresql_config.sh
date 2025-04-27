@@ -247,7 +247,7 @@ configure_postgresql() {
     # Use helper function to ensure password uses scram-sha-256
     ensure_scram_password "postgres" "${PG_SUPERUSER_PASSWORD}"
   else
-    log_warn "PG_SUPERUSER_PASSWORD not set, skipping password update"
+    log_info "Using default PostgreSQL superuser password (PG_SUPERUSER_PASSWORD not specified)"
   fi
   
   # Create the specified database if it doesn't exist
@@ -263,7 +263,7 @@ configure_postgresql() {
       log_info "Database ${PG_DATABASE} already exists, skipping creation"
     fi
   else
-    log_warn "PG_DATABASE not set, skipping database creation"
+    log_info "Using default 'postgres' database (PG_DATABASE not specified)"
   fi
   
   # Update pg_hba.conf for client authentication
@@ -380,7 +380,7 @@ configure_pgbouncer() {
       log_error "pgbouncer authentication will not work correctly"
     fi
   else
-    log_warn "PG_SUPERUSER_PASSWORD not set, cannot create pgbouncer auth file"
+    log_info "Authentication file not created (PG_SUPERUSER_PASSWORD not specified)"
   fi
   
   # Set correct ownership for pgbouncer files
