@@ -9,18 +9,49 @@ install_postgresql() {
   # Add PostgreSQL repository
   echo "deb http://apt.postgresql.org/pub/repos/apt/ $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
   
-  # Import PostgreSQL signing key
-  wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
+  # Import PostgreSQL signing key using modern method (avoiding deprecated apt-key)
+  log_info "Adding PostgreSQL repository signing key..."
+  mkdir -p /etc/apt/trusted.gpg.d/
+  local keyring_file="/etc/apt/trusted.gpg.d/postgresql-archive-keyring.gpg"
+  
+  if ! wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor > "$keyring_file"; then
+    log_error "Failed to download and install PostgreSQL repository key"
+    # Fallback to the old method for older Ubuntu versions
+    log_warn "Trying fallback method with apt-key (not recommended but may work on older systems)"
+    if ! wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -; then
+      log_error "Both key installation methods failed. Cannot continue with PostgreSQL installation."
+      return 1
+    else
+      log_warn "Successfully added key using deprecated apt-key method"
+    fi
+  else
+    chmod 644 "$keyring_file"
+    log_info "Successfully added PostgreSQL repository key"
+  fi
   
   # Update package lists
-  execute_silently apt-get update
+  log_info "Updating package lists..."
+  if ! execute_silently apt-get update; then
+    log_error "Failed to update package lists. Check network connection and repository configuration."
+    return 1
+  fi
   
   # Install PostgreSQL
-  execute_silently apt-get install -y postgresql postgresql-contrib
+  log_info "Installing PostgreSQL packages..."
+  if ! execute_silently apt-get install -y postgresql postgresql-contrib; then
+    log_error "Failed to install PostgreSQL packages"
+    return 1
+  fi
   
   # Ensure PostgreSQL is enabled and started
+  log_info "Enabling and starting PostgreSQL service..."
   systemctl enable postgresql
-  systemctl start postgresql
+  if ! systemctl start postgresql; then
+    log_error "Failed to start PostgreSQL service"
+    log_warn "Checking PostgreSQL status..."
+    systemctl status postgresql
+    return 1
+  fi
   
   log_info "PostgreSQL installed successfully"
 }
