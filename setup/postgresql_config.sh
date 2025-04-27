@@ -6,16 +6,27 @@
 install_postgresql() {
   log_info "Installing PostgreSQL..."
   
-  # Create directory for PostgreSQL repository key
+  # Check if postgresql-common is installed
+  if ! dpkg -l | grep -q postgresql-common; then
+    log_info "Installing postgresql-common from default repositories..."
+    apt-get install -y postgresql-common || log_warn "Failed to install postgresql-common, but continuing with repository setup"
+  fi
+  
+  # Create directory for PostgreSQL repository key with proper permissions
   log_info "Adding PostgreSQL repository..."
   mkdir -p /usr/share/postgresql-common/pgdg
+  chmod 755 /usr/share/postgresql-common/pgdg
   local keyring_file="/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc"
   
   # Download the repository key
+  log_info "Downloading PostgreSQL repository key..."
   if ! wget --quiet -O "$keyring_file" https://www.postgresql.org/media/keys/ACCC4CF8.asc; then
     log_error "Failed to download PostgreSQL repository key"
     return 1
   fi
+  
+  # Set proper permissions on the key file
+  chmod 644 "$keyring_file"
   
   # Create repository configuration using VERSION_CODENAME from os-release
   . /etc/os-release
@@ -24,21 +35,61 @@ install_postgresql() {
     return 1
   fi
   
+  # Check if VERSION_CODENAME is supported
+  local supported_codenames="focal jammy noble oracular plucky"
+  if ! echo "$supported_codenames" | grep -q "$VERSION_CODENAME"; then
+    log_warn "Ubuntu $VERSION_CODENAME might not be officially supported by the PostgreSQL repository"
+    log_warn "Continuing anyway, but installation might fail"
+  fi
+  
   # Add PostgreSQL repository with signed-by method
+  log_info "Creating repository configuration file..."
   echo "deb [signed-by=$keyring_file] https://apt.postgresql.org/pub/repos/apt $VERSION_CODENAME-pgdg main" > /etc/apt/sources.list.d/pgdg.list
   log_info "Successfully added PostgreSQL repository for $VERSION_CODENAME"
   
-  # Update package lists
+  # Check network connectivity before updating package lists
+  if ! ping -c 1 apt.postgresql.org > /dev/null 2>&1; then
+    log_warn "Network connectivity to apt.postgresql.org appears to be unavailable"
+    log_warn "Continuing anyway, but apt update may fail if network is unreachable"
+  fi
+  
+  # Update package lists with better error capture
   log_info "Updating package lists..."
-  if ! execute_silently apt-get update; then
-    log_error "Failed to update package lists. Check network connection and repository configuration."
-    return 1
+  local update_output
+  update_output=$(apt-get update 2>&1)
+  if [ $? -ne 0 ]; then
+    log_error "Failed to update package lists. Error details:"
+    log_error "$update_output"
+    
+    # Try running the official PostgreSQL repository setup script as a fallback
+    if [ -f "/usr/share/postgresql-common/pgdg/apt.postgresql.org.sh" ]; then
+      log_warn "Trying fallback method: Running the official PostgreSQL repository setup script"
+      if ! bash /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh; then
+        log_error "Official setup script also failed. Cannot continue with PostgreSQL installation."
+        return 1
+      else
+        log_info "Successfully configured repository using official script"
+        # Try updating package lists again
+        update_output=$(apt-get update 2>&1)
+        if [ $? -ne 0 ]; then
+          log_error "Still failed to update package lists after official script. Error details:"
+          log_error "$update_output"
+          return 1
+        fi
+      fi
+    else
+      log_error "No fallback method available. Cannot continue with PostgreSQL installation."
+      return 1
+    fi
   fi
   
   # Install PostgreSQL
   log_info "Installing PostgreSQL packages..."
-  if ! execute_silently apt-get install -y postgresql postgresql-contrib; then
-    log_error "Failed to install PostgreSQL packages"
+  local install_output
+  install_output=$(apt-get install -y postgresql postgresql-contrib 2>&1)
+  if [ $? -ne 0 ]; then
+    log_error "Failed to install PostgreSQL packages. Error details:"
+    log_error "$install_output"
     return 1
   fi
   
