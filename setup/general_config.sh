@@ -10,15 +10,19 @@ update_system() {
         # Clear logs
         clear_logs
         
-        # Update package lists silently
-        execute_silently "apt-get update -qq" \
-            "" \
-            "Failed to update package lists" || return 1
+        # Update package lists silently with maximum output suppression
+        if ! DEBIAN_FRONTEND=noninteractive apt-get update -y -qq > /dev/null 2>&1; then
+            log_error "Failed to update package lists"
+            return 1
+        fi
         
-        # Upgrade packages silently with no prompts
-        execute_silently "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq" \
-            "System packages updated successfully" \
-            "Failed to upgrade packages" || return 1
+        # Upgrade packages silently with maximum output suppression
+        if ! DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq > /dev/null 2>&1; then
+            log_error "Failed to upgrade packages"
+            return 1
+        fi
+        
+        log_info "System packages updated successfully"
     else
         log_info "System update skipped as per configuration"
     fi

@@ -9,7 +9,11 @@ install_postgresql() {
   # Check if postgresql-common is installed
   if ! dpkg -l | grep -q postgresql-common; then
     log_info "Installing postgresql-common from default repositories..."
-    apt-get install -y postgresql-common || log_warn "Failed to install postgresql-common, but continuing with repository setup"
+    # Use noninteractive frontend and redirect all output to suppress package installation messages
+    export DEBIAN_FRONTEND=noninteractive
+    if ! apt-get install -y -qq postgresql-common > /dev/null 2>&1; then
+      log_warn "Failed to install postgresql-common, but continuing with repository setup"
+    fi
   fi
   
   # Create directory for PostgreSQL repository key with proper permissions
@@ -85,18 +89,17 @@ install_postgresql() {
   
   # Install PostgreSQL
   log_info "Installing PostgreSQL packages..."
-  local install_output
-  install_output=$(apt-get install -y postgresql postgresql-contrib 2>&1)
-  if [ $? -ne 0 ]; then
-    log_error "Failed to install PostgreSQL packages. Error details:"
-    log_error "$install_output"
+  # Use noninteractive frontend and redirect all output
+  export DEBIAN_FRONTEND=noninteractive
+  if ! apt-get install -y -qq postgresql postgresql-contrib > /dev/null 2>&1; then
+    log_error "Failed to install PostgreSQL packages"
     return 1
   fi
   
   # Ensure PostgreSQL is enabled and started
   log_info "Enabling and starting PostgreSQL service..."
-  systemctl enable postgresql
-  if ! systemctl start postgresql; then
+  systemctl enable postgresql > /dev/null 2>&1
+  if ! systemctl start postgresql > /dev/null 2>&1; then
     log_error "Failed to start PostgreSQL service"
     log_warn "Checking PostgreSQL status..."
     systemctl status postgresql
@@ -110,18 +113,16 @@ install_postgresql() {
 install_pgbouncer() {
   log_info "Installing pgbouncer..."
   
-  # Install pgbouncer package
-  local install_output
-  install_output=$(apt-get install -y pgbouncer 2>&1)
-  if [ $? -ne 0 ]; then
-    log_error "Failed to install pgbouncer. Error details:"
-    log_error "$install_output"
+  # Install pgbouncer package with noninteractive frontend and suppressed output
+  export DEBIAN_FRONTEND=noninteractive
+  if ! apt-get install -y -qq pgbouncer > /dev/null 2>&1; then
+    log_error "Failed to install pgbouncer"
     return 1
   fi
   
   # Ensure pgbouncer service is enabled
   log_info "Enabling pgbouncer service..."
-  if ! systemctl enable pgbouncer; then
+  if ! systemctl enable pgbouncer > /dev/null 2>&1; then
     log_error "Failed to enable pgbouncer service"
     return 1
   fi
