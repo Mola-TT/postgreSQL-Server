@@ -30,12 +30,16 @@ update_system() {
 
 # Set timezone
 set_timezone() {    
-    execute_silently "timedatectl set-timezone \"$TIMEZONE\"" \
-        "" \
-        "Failed to set timezone to $TIMEZONE" || return 1
+    # Use SERVER_TIMEZONE if defined, otherwise fallback to UTC
+    local timezone="${SERVER_TIMEZONE:-UTC}"
+    
+    execute_silently "timedatectl set-timezone \"$timezone\"" \
+        "Timezone set to $timezone" \
+        "Failed to set timezone to $timezone" || return 1
     
     # Get current timezone
     current_tz=$(timedatectl | grep "Time zone" | awk '{print $3}')
+    export TIMEZONE="$timezone"  # Set TIMEZONE for backward compatibility
 }
 
 # Export functions

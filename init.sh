@@ -53,7 +53,7 @@ main() {
 
     # Set timezone first
     set_timezone
-    log_info "Set system timezone to $TIMEZONE"
+    log_info "Set system timezone to ${SERVER_TIMEZONE:-UTC}"
     
     
     # Load user environment variables if they exist (overrides defaults)
