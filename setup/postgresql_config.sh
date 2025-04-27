@@ -6,28 +6,27 @@
 install_postgresql() {
   log_info "Installing PostgreSQL..."
   
-  # Add PostgreSQL repository
-  echo "deb http://apt.postgresql.org/pub/repos/apt/ $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+  # Create directory for PostgreSQL repository key
+  log_info "Adding PostgreSQL repository..."
+  mkdir -p /usr/share/postgresql-common/pgdg
+  local keyring_file="/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc"
   
-  # Import PostgreSQL signing key using modern method (avoiding deprecated apt-key)
-  log_info "Adding PostgreSQL repository signing key..."
-  mkdir -p /etc/apt/trusted.gpg.d/
-  local keyring_file="/etc/apt/trusted.gpg.d/postgresql-archive-keyring.gpg"
-  
-  if ! wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor > "$keyring_file"; then
-    log_error "Failed to download and install PostgreSQL repository key"
-    # Fallback to the old method for older Ubuntu versions
-    log_warn "Trying fallback method with apt-key (not recommended but may work on older systems)"
-    if ! wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -; then
-      log_error "Both key installation methods failed. Cannot continue with PostgreSQL installation."
-      return 1
-    else
-      log_warn "Successfully added key using deprecated apt-key method"
-    fi
-  else
-    chmod 644 "$keyring_file"
-    log_info "Successfully added PostgreSQL repository key"
+  # Download the repository key
+  if ! wget --quiet -O "$keyring_file" https://www.postgresql.org/media/keys/ACCC4CF8.asc; then
+    log_error "Failed to download PostgreSQL repository key"
+    return 1
   fi
+  
+  # Create repository configuration using VERSION_CODENAME from os-release
+  . /etc/os-release
+  if [ -z "$VERSION_CODENAME" ]; then
+    log_error "Could not determine OS version codename. Check /etc/os-release or install lsb-release."
+    return 1
+  fi
+  
+  # Add PostgreSQL repository with signed-by method
+  echo "deb [signed-by=$keyring_file] https://apt.postgresql.org/pub/repos/apt $VERSION_CODENAME-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+  log_info "Successfully added PostgreSQL repository for $VERSION_CODENAME"
   
   # Update package lists
   log_info "Updating package lists..."
