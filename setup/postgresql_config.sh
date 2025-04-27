@@ -111,10 +111,20 @@ install_pgbouncer() {
   log_info "Installing pgbouncer..."
   
   # Install pgbouncer package
-  execute_silently apt-get install -y pgbouncer
+  local install_output
+  install_output=$(apt-get install -y pgbouncer 2>&1)
+  if [ $? -ne 0 ]; then
+    log_error "Failed to install pgbouncer. Error details:"
+    log_error "$install_output"
+    return 1
+  fi
   
   # Ensure pgbouncer service is enabled
-  systemctl enable pgbouncer
+  log_info "Enabling pgbouncer service..."
+  if ! systemctl enable pgbouncer; then
+    log_error "Failed to enable pgbouncer service"
+    return 1
+  fi
   
   log_info "pgbouncer installed successfully"
 }
