@@ -39,11 +39,36 @@ display_banner() {
 run_tests() {
     log_info "Running test suite..."
     
+    # Check multiple potential locations for the test runner
+    local test_script=""
+    local possible_locations=(
+        "$SCRIPT_DIR/test/run_tests.sh"
+        "/home/tom/postgreSQL-Server/test/run_tests.sh"
+        "$(dirname "$SCRIPT_DIR")/test/run_tests.sh"
+    )
+    
+    # Find the first existing test script
+    for location in "${possible_locations[@]}"; do
+        if [ -f "$location" ]; then
+            test_script="$location"
+            log_info "Found test script at: $test_script"
+            break
+        fi
+    done
+    
+    if [ -z "$test_script" ]; then
+        log_error "Could not find test script. Checked locations:"
+        for location in "${possible_locations[@]}"; do
+            log_error "  - $location"
+        done
+        return 1
+    fi
+    
     # Make sure the test runner is executable
-    chmod +x "$SCRIPT_DIR/test/run_tests.sh"
+    chmod +x "$test_script" 2>/dev/null || log_warn "Failed to set executable permission on test script"
     
     # Run the tests
-    if "$SCRIPT_DIR/test/run_tests.sh"; then
+    if "$test_script"; then
         log_info "All tests passed successfully!"
     else
         log_warn "Some tests failed. Please check the logs for details."
