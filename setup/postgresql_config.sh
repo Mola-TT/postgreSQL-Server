@@ -338,6 +338,7 @@ configure_pgbouncer() {
     echo "pool_mode = ${PGB_POOL_MODE:-transaction}"
     echo "max_client_conn = ${PGB_MAX_CLIENT_CONN:-100}"
     echo "default_pool_size = ${PGB_DEFAULT_POOL_SIZE:-20}"
+    echo "ignore_startup_parameters = ${PGB_IGNORE_PARAMS:-extra_float_digits}"
     echo ""
   } > "$pgb_conf" 2>/dev/null
   
