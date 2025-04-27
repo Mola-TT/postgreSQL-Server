@@ -5,7 +5,22 @@ alwaysApply: true
 ---
 # Milestone
 
-## Current Progress: Milestone 2
+## Current Progress: Milestone 3
+
+## Milestone 3
+- Created `nginx_config.sh` under setup folder to:
+  - Install and configure Nginx as a secure proxy for PostgreSQL
+  - Configure SSL using Let's Encrypt with fallback to self-signed certificates
+  - Implement automatic subdomain-to-database mapping (e.g., bestdb.domain.com connects to bestdb database)
+  - Configure firewall rules to expose Nginx ports (80/443) while restricting direct PostgreSQL access
+  - Update pgbouncer configuration for wildcard database handling
+  - Ensure all connections to PostgreSQL are secured with SSL through port 6432 via pgbouncer
+  - Provide robust error handling and silent installation
+- Updated `init.sh` to include Nginx configuration in the initialization process
+- Enhanced environment configuration:
+  - Added Nginx-specific settings to default.env and user.env.template
+  - Added SSL certificate configuration options
+  - Added domain name configuration for subdomain mapping
 
 ## Milestone 2
 - Restructured project for better organization:
