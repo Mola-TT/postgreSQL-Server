@@ -137,12 +137,12 @@ ensure_scram_password() {
   log_info "Ensuring $username password uses scram-sha-256 encryption"
   
   # First, make sure password_encryption is set to scram-sha-256
-  su - postgres -c "psql -c \"ALTER SYSTEM SET password_encryption = 'scram-sha-256';\""
-  su - postgres -c "psql -c \"SELECT pg_reload_conf();\""
+  su - postgres -c "psql -c \"ALTER SYSTEM SET password_encryption = 'scram-sha-256';\"" > /dev/null 2>&1
+  su - postgres -c "psql -c \"SELECT pg_reload_conf();\"" > /dev/null 2>&1
   
   # Verify the setting was applied
   local current_encryption
-  current_encryption=$(su - postgres -c "psql -t -c \"SHOW password_encryption;\"" | tr -d ' \n\r\t')
+  current_encryption=$(su - postgres -c "psql -t -c \"SHOW password_encryption;\"" 2>/dev/null | tr -d ' \n\r\t')
   
   if [ "$current_encryption" != "scram-sha-256" ]; then
     log_warn "Failed to set password_encryption to scram-sha-256, current value: $current_encryption"
@@ -157,10 +157,10 @@ ensure_scram_password() {
     fi
     
     # Restart PostgreSQL to apply changes
-    systemctl restart postgresql
+    systemctl restart postgresql > /dev/null 2>&1
     
     # Verify again
-    current_encryption=$(su - postgres -c "psql -t -c \"SHOW password_encryption;\"" | tr -d ' \n\r\t')
+    current_encryption=$(su - postgres -c "psql -t -c \"SHOW password_encryption;\"" 2>/dev/null | tr -d ' \n\r\t')
     if [ "$current_encryption" = "scram-sha-256" ]; then
       log_info "Successfully set password_encryption to scram-sha-256 after restart"
     else
@@ -171,12 +171,12 @@ ensure_scram_password() {
   fi
   
   # Set/reset the user's password to ensure it uses scram-sha-256
-  su - postgres -c "psql -c \"ALTER USER $username PASSWORD '$password';\""
+  su - postgres -c "psql -c \"ALTER USER $username PASSWORD '$password';\"" > /dev/null 2>&1
   
   # Verify the password was stored with scram-sha-256
   if [ "$username" = "postgres" ]; then
     local password_hash
-    password_hash=$(su - postgres -c "psql -t -c \"SELECT rolpassword FROM pg_authid WHERE rolname='postgres';\"" | tr -d ' \n\r\t')
+    password_hash=$(su - postgres -c "psql -t -c \"SELECT rolpassword FROM pg_authid WHERE rolname='postgres';\"" 2>/dev/null | tr -d ' \n\r\t')
     
     if [[ "$password_hash" == SCRAM-SHA-256* ]]; then
       log_info "Verified $username password is stored with scram-sha-256 encryption"
@@ -205,39 +205,39 @@ configure_postgresql() {
   fi
   
   # Back up the configuration files
-  cp "$pg_conf" "${pg_conf}.bak"
-  cp "$pg_hba_conf" "${pg_hba_conf}.bak"
+  cp "$pg_conf" "${pg_conf}.bak" 2>/dev/null
+  cp "$pg_hba_conf" "${pg_hba_conf}.bak" 2>/dev/null
   
   log_info "Backed up PostgreSQL configuration files"
   
   # Set password encryption to scram-sha-256
   if grep -q "^password_encryption" "$pg_conf"; then
-    sed -i "s/^password_encryption.*$/password_encryption = 'scram-sha-256' # Modified by setup script/" "$pg_conf"
+    sed -i "s/^password_encryption.*$/password_encryption = 'scram-sha-256' # Modified by setup script/" "$pg_conf" 2>/dev/null
   else
-    echo "password_encryption = 'scram-sha-256' # Added by setup script" >> "$pg_conf"
+    echo "password_encryption = 'scram-sha-256' # Added by setup script" >> "$pg_conf" 2>/dev/null
   fi
   
   # Configure PostgreSQL for SSL if enabled
   if [ "${PG_ENABLE_SSL:-true}" = "true" ]; then
     if grep -q "^ssl\s*=\s*" "$pg_conf"; then
-      sed -i "s/^ssl\s*=\s*.*$/ssl = on # Modified by setup script/" "$pg_conf"
+      sed -i "s/^ssl\s*=\s*.*$/ssl = on # Modified by setup script/" "$pg_conf" 2>/dev/null
     else
-      echo "ssl = on # Added by setup script" >> "$pg_conf"
+      echo "ssl = on # Added by setup script" >> "$pg_conf" 2>/dev/null
     fi
     log_info "SSL enabled for PostgreSQL"
   fi
   
   # Modify listen_addresses to allow external connections if needed
   if grep -q "^listen_addresses" "$pg_conf"; then
-    sed -i "s/^listen_addresses.*$/listen_addresses = 'localhost' # Modified by setup script - Only local connections, use pgbouncer for external/" "$pg_conf"
+    sed -i "s/^listen_addresses.*$/listen_addresses = 'localhost' # Modified by setup script - Only local connections, use pgbouncer for external/" "$pg_conf" 2>/dev/null
   else
-    echo "listen_addresses = 'localhost' # Added by setup script - Only local connections, use pgbouncer for external" >> "$pg_conf"
+    echo "listen_addresses = 'localhost' # Added by setup script - Only local connections, use pgbouncer for external" >> "$pg_conf" 2>/dev/null
   fi
   
   log_info "Updated PostgreSQL configuration"
   
   # Restart PostgreSQL to apply the configuration changes
-  systemctl restart postgresql
+  systemctl restart postgresql > /dev/null 2>&1
   
   # Set the PostgreSQL superuser password using scram-sha-256
   log_info "Setting PostgreSQL superuser password..."
@@ -254,9 +254,9 @@ configure_postgresql() {
     log_info "Creating database: ${PG_DATABASE}"
     
     # Check if the database already exists
-    if ! su - postgres -c "psql -lqt | cut -d \| -f 1 | grep -qw ${PG_DATABASE}"; then
+    if ! su - postgres -c "psql -lqt | cut -d \| -f 1 | grep -qw ${PG_DATABASE}" 2>/dev/null; then
       # Create the database
-      su - postgres -c "createdb ${PG_DATABASE}"
+      su - postgres -c "createdb ${PG_DATABASE}" > /dev/null 2>&1
       log_info "Database ${PG_DATABASE} created successfully"
     else
       log_info "Database ${PG_DATABASE} already exists, skipping creation"
@@ -277,12 +277,12 @@ configure_postgresql() {
     echo "local   all             all                                     peer"
     echo "host    all             all             127.0.0.1/32            scram-sha-256"
     echo "host    all             all             ::1/128                 scram-sha-256"
-  } > "$pg_hba_conf"
+  } > "$pg_hba_conf" 2>/dev/null
   
   log_info "Updated client authentication configuration"
   
   # Reload PostgreSQL to apply the authentication changes
-  su - postgres -c "psql -c \"SELECT pg_reload_conf();\""
+  su - postgres -c "psql -c \"SELECT pg_reload_conf();\"" > /dev/null 2>&1
   
   log_info "PostgreSQL configuration completed successfully"
 }
@@ -301,7 +301,7 @@ configure_pgbouncer() {
   fi
   
   # Create a backup of the original configuration
-  cp "$pgb_conf" "${pgb_conf}.bak"
+  cp "$pgb_conf" "${pgb_conf}.bak" 2>/dev/null
   
   # Determine authentication type (default to scram-sha-256 for security)
   local auth_type="${PGB_AUTH_TYPE:-scram-sha-256}"
@@ -309,8 +309,8 @@ configure_pgbouncer() {
   
   # Enable log file
   local pgb_log_dir="/var/log/pgbouncer"
-  mkdir -p "$pgb_log_dir"
-  chown postgres:postgres "$pgb_log_dir"
+  mkdir -p "$pgb_log_dir" 2>/dev/null
+  chown postgres:postgres "$pgb_log_dir" 2>/dev/null
   
   # Configure pgbouncer with settings from environment variables
   {
@@ -338,7 +338,7 @@ configure_pgbouncer() {
     echo "max_client_conn = ${PGB_MAX_CLIENT_CONN:-100}"
     echo "default_pool_size = ${PGB_DEFAULT_POOL_SIZE:-20}"
     echo ""
-  } > "$pgb_conf"
+  } > "$pgb_conf" 2>/dev/null
   
   log_info "Updated pgbouncer configuration in $pgb_conf"
   
@@ -383,24 +383,24 @@ configure_pgbouncer() {
   fi
   
   # Set correct ownership for pgbouncer files
-  chown postgres:postgres "$pgb_conf"
-  chown postgres:postgres "$pgb_userlist"
-  chmod 640 "$pgb_conf"
-  chmod 640 "$pgb_userlist"
+  chown postgres:postgres "$pgb_conf" 2>/dev/null
+  chown postgres:postgres "$pgb_userlist" 2>/dev/null
+  chmod 640 "$pgb_conf" 2>/dev/null
+  chmod 640 "$pgb_userlist" 2>/dev/null
   
   # Restart pgbouncer to apply the configuration changes
-  systemctl restart pgbouncer
+  systemctl restart pgbouncer > /dev/null 2>&1
   
   # Configure firewall if enabled
   if [ "${CONFIGURE_FIREWALL:-true}" = "true" ]; then
     log_info "Configuring firewall for pgbouncer..."
     
     # Allow connections to pgbouncer port
-    ufw allow ${PGB_LISTEN_PORT:-6432}/tcp comment "pgbouncer postgresql connection pooling"
+    ufw allow ${PGB_LISTEN_PORT:-6432}/tcp comment "pgbouncer postgresql connection pooling" > /dev/null 2>&1
     
     # Block direct connections to PostgreSQL port (5432) from external sources
     # Allow only from localhost
-    ufw deny 5432/tcp comment "block direct postgresql connections"
+    ufw deny 5432/tcp comment "block direct postgresql connections" > /dev/null 2>&1
     
     log_info "Firewall configured for pgbouncer"
   fi

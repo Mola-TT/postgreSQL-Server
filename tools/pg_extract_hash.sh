@@ -40,13 +40,13 @@ extract_hash() {
     log_warn "This may cause password hash extraction to fail"
     
     # Force set password_encryption to scram-sha-256
-    su - postgres -c "psql -c \"ALTER SYSTEM SET password_encryption = 'scram-sha-256';\""
-    su - postgres -c "psql -c \"SELECT pg_reload_conf();\""
+    su - postgres -c "psql -c \"ALTER SYSTEM SET password_encryption = 'scram-sha-256';\"" > /dev/null 2>&1
+    su - postgres -c "psql -c \"SELECT pg_reload_conf();\"" > /dev/null 2>&1
     log_info "Updated PostgreSQL configuration to use scram-sha-256 password encryption"
     
     # Reset the superuser password to force rehashing with scram-sha-256
     if [ -n "$PG_SUPERUSER_PASSWORD" ] && [ "$username" = "postgres" ]; then
-      su - postgres -c "psql -c \"ALTER USER postgres PASSWORD '${PG_SUPERUSER_PASSWORD}';\""
+      su - postgres -c "psql -c \"ALTER USER postgres PASSWORD '${PG_SUPERUSER_PASSWORD}';\""  > /dev/null 2>&1
       log_info "Reset superuser password with scram-sha-256 encryption"
     fi
   fi
@@ -73,7 +73,7 @@ extract_hash() {
           
           # Force re-encryption of password with scram-sha-256
           if [ -n "$PG_SUPERUSER_PASSWORD" ] && [ "$username" = "postgres" ]; then
-            su - postgres -c "psql -c \"ALTER USER postgres PASSWORD '${PG_SUPERUSER_PASSWORD}';\""
+            su - postgres -c "psql -c \"ALTER USER postgres PASSWORD '${PG_SUPERUSER_PASSWORD}';\""  > /dev/null 2>&1
             log_info "Forced re-encryption of superuser password"
             
             # Try extracting again after forcing re-encryption
@@ -112,7 +112,7 @@ extract_hash() {
           
           # Try force re-encryption as a last attempt
           if [ -n "$PG_SUPERUSER_PASSWORD" ] && [ "$username" = "postgres" ]; then
-            su - postgres -c "psql -c \"ALTER USER postgres PASSWORD '${PG_SUPERUSER_PASSWORD}';\""
+            su - postgres -c "psql -c \"ALTER USER postgres PASSWORD '${PG_SUPERUSER_PASSWORD}';\""  > /dev/null 2>&1
             log_info "Last attempt: Forced re-encryption of superuser password"
             
             # Try again with COPY method
@@ -171,10 +171,10 @@ extract_hash() {
           # One last attempt with forced password reset
           if [ -n "$PG_SUPERUSER_PASSWORD" ] && [ "$username" = "postgres" ]; then
             # Force password_encryption to be scram-sha-256
-            su - postgres -c "psql -c \"ALTER SYSTEM SET password_encryption = 'scram-sha-256';\""
-            su - postgres -c "psql -c \"SELECT pg_reload_conf();\""
+            su - postgres -c "psql -c \"ALTER SYSTEM SET password_encryption = 'scram-sha-256';\"" > /dev/null 2>&1
+            su - postgres -c "psql -c \"SELECT pg_reload_conf();\"" > /dev/null 2>&1
             # Reset the password to force rehashing
-            su - postgres -c "psql -c \"ALTER USER postgres PASSWORD '${PG_SUPERUSER_PASSWORD}';\""
+            su - postgres -c "psql -c \"ALTER USER postgres PASSWORD '${PG_SUPERUSER_PASSWORD}';\""  > /dev/null 2>&1
             log_info "Final attempt: Reset password with forced scram-sha-256 encryption"
             
             # Try extraction one more time
