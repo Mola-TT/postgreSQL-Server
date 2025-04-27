@@ -347,7 +347,7 @@ configure_pgbouncer() {
   log_info "Setting up pgbouncer authentication..."
   
   # Source the extract_hash utility
-  source "$(dirname "${BASH_SOURCE[0]}")/../tools/pg_extract_hash.sh"
+  source "$(dirname "${BASH_SOURCE[0]}")/../lib/pg_extract_hash.sh"
   
   # Extract hash for PostgreSQL superuser
   if [ -n "${PG_SUPERUSER_PASSWORD}" ]; then

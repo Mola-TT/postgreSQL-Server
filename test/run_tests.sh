@@ -7,14 +7,14 @@ SCRIPT_DIR="$(cd "$(dirname "$(dirname "${BASH_SOURCE[0]}")")" && pwd)"
 TEST_DIR="$SCRIPT_DIR/test"
 
 # Source the logger
-source "$SCRIPT_DIR/tools/logger.sh"
+source "$SCRIPT_DIR/lib/logger.sh"
 
 # Load default environment variables
-source "$SCRIPT_DIR/default.env"
+source "$SCRIPT_DIR/conf/default.env"
 
 # Override with user environment if available
-if [ -f "$SCRIPT_DIR/user.env" ]; then
-    source "$SCRIPT_DIR/user.env"
+if [ -f "$SCRIPT_DIR/conf/user.env" ]; then
+    source "$SCRIPT_DIR/conf/user.env"
 fi
 
 log_section() {

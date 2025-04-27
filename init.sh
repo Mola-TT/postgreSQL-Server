@@ -10,13 +10,13 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Source logger
-source "$SCRIPT_DIR/tools/logger.sh"
+source "$SCRIPT_DIR/lib/logger.sh"
 
 # Load default environment variables
-source "$SCRIPT_DIR/default.env"
+source "$SCRIPT_DIR/conf/default.env"
 
 # Source utilities
-source "$SCRIPT_DIR/tools/utilities.sh"
+source "$SCRIPT_DIR/lib/utilities.sh"
 
 # Source general configuration
 source "$SCRIPT_DIR/setup/general_config.sh"
@@ -57,12 +57,12 @@ main() {
     
     
     # Load user environment variables if they exist (overrides defaults)
-    if [ -f "$SCRIPT_DIR/user.env" ]; then
-        log_info "Loading user environment variables from user.env"
-        source "$SCRIPT_DIR/user.env"
+    if [ -f "$SCRIPT_DIR/conf/user.env" ]; then
+        log_info "Loading user environment variables from conf/user.env"
+        source "$SCRIPT_DIR/conf/user.env"
     else
         log_info "No user.env file found. Use default settings"
-        log_info "You can create user.env by copying user.env.template and modifying it"
+        log_info "You can create user.env by copying conf/user.env.template and modifying it"
     fi
 
     # Check if running as root
@@ -88,7 +88,7 @@ main() {
         log_info "Tests skipped (set RUN_TESTS=true to run tests)"
     fi
     
-    if [ "$LOG_LEVEL" -eq "$LOG_LEVEL_DEBUG" ]; then
+    if [ "$LOG_LEVEL" = "DEBUG" ]; then
         log_debug "For detailed logs, check: $LOG_FILE"
     fi
 }

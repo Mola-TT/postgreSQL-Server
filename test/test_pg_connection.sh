@@ -4,22 +4,22 @@
 
 # Find the script directory and import essentials
 SCRIPT_DIR="$(cd "$(dirname "$(dirname "${BASH_SOURCE[0]}")")" && pwd)"
-source "$SCRIPT_DIR/tools/logger.sh"
+source "$SCRIPT_DIR/lib/logger.sh"
 
 # Set LOG_FILE to prevent warnings
 if [ -z "$LOG_FILE" ]; then
     export LOG_FILE="/var/log/server_init.log"
 fi
 
-source "$SCRIPT_DIR/tools/utilities.sh"
-source "$SCRIPT_DIR/tools/pg_extract_hash.sh"
+source "$SCRIPT_DIR/lib/utilities.sh"
+source "$SCRIPT_DIR/lib/pg_extract_hash.sh"
 
 # Load default environment variables
-source "$SCRIPT_DIR/default.env"
+source "$SCRIPT_DIR/conf/default.env"
 
 # Override with user environment if available
-if [ -f "$SCRIPT_DIR/user.env" ]; then
-    source "$SCRIPT_DIR/user.env"
+if [ -f "$SCRIPT_DIR/conf/user.env" ]; then
+    source "$SCRIPT_DIR/conf/user.env"
 fi
 
 # Status indicators with logger
