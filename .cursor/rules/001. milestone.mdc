@@ -8,6 +8,10 @@ alwaysApply: true
 ## Current Progress: Milestone 2
 
 ## Milestone 2
+- Restructured project for better organization:
+  - Moved utility scripts to `lib/` directory
+  - Moved configuration files to `conf/` directory
+  - Updated all file references to match the new structure
 - Created `postgresql_config.sh` under setup folder that:
   - Installs PostgreSQL using the official repository
   - Installs pgbouncer for connection pooling
@@ -30,10 +34,16 @@ alwaysApply: true
   - Added PostgreSQL-specific settings to default.env and user.env.template
   - Added pgbouncer configuration settings
   - Added PostgreSQL superuser password management
+  - Added SYSTEM_UPDATE and RUN_TESTS environment variables
+  - Improved timezone configuration with proper variable handling
+  - Set timezone to Asia/Hong_Kong
+  - Enabled automatic test execution
 - Improved logging and error handling:
   - Ensured clean, error-free logs during normal operation
   - Implemented graceful fallback mechanisms for configuration issues
   - Added verification steps for all critical components
+  - Fixed timezone error by properly handling timezone variables
+  - Added backward compatibility for legacy variable references
 
 ## Milestone 1
 
