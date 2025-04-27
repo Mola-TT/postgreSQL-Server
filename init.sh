@@ -1,6 +1,6 @@
 #!/bin/bash
 # init.sh - PostgreSQL server initialization script
-# Part of Milestone 1 & 2
+# Part of Milestone 1, 2 & 3
 # This script updates the Ubuntu server silently and sets up initial environment
 
 # Exit immediately if a command exits with a non-zero status
@@ -23,6 +23,9 @@ source "$SCRIPT_DIR/setup/general_config.sh"
 
 # Source PostgreSQL configuration
 source "$SCRIPT_DIR/setup/postgresql_config.sh"
+
+# Source Nginx configuration
+source "$SCRIPT_DIR/setup/nginx_config.sh"
 
 # Display init banner
 display_banner() {
@@ -78,6 +81,9 @@ main() {
     
     # Setup PostgreSQL and pgbouncer
     setup_postgresql
+    
+    # Setup Nginx for subdomain mapping
+    setup_nginx
     
     log_info "Initialization complete"
     
