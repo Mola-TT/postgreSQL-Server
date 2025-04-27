@@ -31,6 +31,15 @@ extract_hash() {
     fi
   fi
   
+  # Method 0: Check if password encryption is properly set up
+  local pg_encryption
+  pg_encryption=$(su - postgres -c "psql -t -c \"SHOW password_encryption;\"" 2>/dev/null | tr -d ' \n\r\t')
+  
+  if [ "$auth_type" = "scram-sha-256" ] && [ "$pg_encryption" != "scram-sha-256" ]; then
+    log_warn "PostgreSQL password_encryption ($pg_encryption) doesn't match auth_type ($auth_type)"
+    log_warn "This may cause password hash extraction to fail"
+  fi
+  
   # For SCRAM-SHA-256 or MD5, extract the hash from PostgreSQL
   
   # Method 1: Have postgres create a temp file with the password hash directly
@@ -153,11 +162,9 @@ extract_hash() {
       else
         log_error "Method 3 with pg_authid succeeded but password hash extraction returned empty result"
         su - postgres -c "rm -f \"$temp_raw\"" 2>/dev/null
-        return 1
       fi
     else
-      log_error "All methods failed to extract SCRAM-SHA-256 password hash"
-      return 1
+      log_error "Method 3 with pg_authid failed"
     fi
   else
     # For MD5 or other methods, use pg_shadow
@@ -176,13 +183,38 @@ extract_hash() {
       else
         log_error "Method 3 succeeded but password hash extraction returned empty result"
         su - postgres -c "rm -f \"$temp_raw\"" 2>/dev/null
-        return 1
       fi
     else
-      log_error "All methods failed to extract password hash"
-      return 1
+      log_error "Method 3 failed"
     fi
   fi
+  
+  # Method 4 (last resort): Direct SQL without intermediary files, using the more modern pg_catalog.pg_authid method
+  if [ "$auth_type" = "scram-sha-256" ]; then
+    log_info "Trying direct query method as last resort"
+    if password_hash=$(su - postgres -c "psql -t -c \"SELECT rolpassword FROM pg_catalog.pg_authid WHERE rolname='${username}';\"" 2>/dev/null); then
+      if [ -n "$password_hash" ]; then
+        # Trim whitespace and add quotes
+        password_hash=$(echo "$password_hash" | tr -d ' \n\r\t')
+        # Format for pgbouncer authentication
+        echo "\"${username}\" \"${password_hash}\"" > "$output_file"
+        
+        # Verify the hash format is correct for SCRAM-SHA-256
+        if ! grep -q "SCRAM-SHA-256" "$output_file"; then
+          log_warn "Password hash does not appear to be in SCRAM-SHA-256 format"
+          log_warn "Make sure PostgreSQL password_encryption is set to 'scram-sha-256'"
+          log_warn "You may need to reset the password to get it in the correct format"
+          return 1
+        fi
+        
+        log_info "Successfully extracted SCRAM-SHA-256 password hash with Method 4"
+        return 0
+      fi
+    fi
+  fi
+  
+  log_error "All methods failed to extract password hash"
+  return 1
 }
 
 # If script is run directly, use command line parameters

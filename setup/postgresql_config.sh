@@ -141,6 +141,46 @@ configure_postgresql() {
     fi
 }
 
+# Helper function to ensure that passwords are stored with scram-sha-256 encryption
+ensure_scram_password() {
+    local username="$1"
+    local password="$2"
+    
+    log_info "Ensuring password for $username is encrypted with scram-sha-256"
+    
+    # First, verify password_encryption setting
+    if ! su - postgres -c "psql -t -c \"SHOW password_encryption;\"" | grep -q "scram-sha-256"; then
+        log_warn "PostgreSQL password_encryption is not set to scram-sha-256"
+        log_info "Setting password_encryption to scram-sha-256"
+        
+        # Add or modify password_encryption in postgresql.conf
+        execute_silently "grep -q '^password_encryption' ${PG_CONF_DIR}/postgresql.conf" "" ""
+        if [ $? -eq 0 ]; then
+            # Replace existing setting
+            execute_silently "sed -i \"s/^password_encryption.*/password_encryption = 'scram-sha-256'/\" ${PG_CONF_DIR}/postgresql.conf" \
+                "Updated password_encryption to scram-sha-256" \
+                "Failed to update password_encryption" || return 1
+        else
+            # Add new setting
+            execute_silently "echo \"password_encryption = 'scram-sha-256'\" >> ${PG_CONF_DIR}/postgresql.conf" \
+                "Added password_encryption = scram-sha-256" \
+                "Failed to add password_encryption" || return 1
+        fi
+        
+        # Restart PostgreSQL to apply the change
+        execute_silently "systemctl restart postgresql" \
+            "PostgreSQL restarted with updated configuration" \
+            "Failed to restart PostgreSQL" || return 1
+    fi
+    
+    # Reset password to force it to be encrypted with the current method (scram-sha-256)
+    execute_silently "su - postgres -c \"psql -c \\\"ALTER USER $username PASSWORD '$password'\\\"\"" \
+        "Password for $username has been re-encrypted with scram-sha-256" \
+        "Failed to update password for $username" || return 1
+    
+    return 0
+}
+
 # Configure pgbouncer
 configure_pgbouncer() {
     log_info "Configuring pgbouncer for external connections..."
@@ -195,6 +235,11 @@ EOL
     execute_silently "chmod 700 /var/lib/postgresql/tmp" \
         "" \
         "Failed to set permissions on temporary directory" || return 1
+    
+    # For scram-sha-256 auth, ensure passwords are properly encrypted first
+    if [ "${PGB_AUTH_TYPE}" = "scram-sha-256" ]; then
+        ensure_scram_password "postgres" "${PG_SUPERUSER_PASSWORD}" || log_warn "Failed to ensure scram password"
+    fi
     
     # Extract password hash using our pg_extract_hash tool
     log_info "Extracting password hash for pgbouncer authentication"
@@ -317,6 +362,12 @@ EOL
     execute_silently "PGPASSWORD=\"${PG_SUPERUSER_PASSWORD}\" psql -h localhost -p ${PGB_LISTEN_PORT} -U postgres -d postgres -c \"SELECT 1\" > /dev/null 2>&1" \
         "Verified pgbouncer connection is working" \
         "Could not connect to pgbouncer, check logs for more details" || log_warn "Connection test failed but continuing anyway"
+    
+    # Log the userlist.txt contents (without password) for debugging
+    if [ "${LOG_LEVEL}" -eq 0 ]; then  # Only in DEBUG mode
+        log_debug "pgbouncer userlist.txt format check:" 
+        execute_silently "cat /etc/pgbouncer/userlist.txt | sed 's/\"[^\"]*\"$/\"********\"/' | head -1" "" ""
+    fi
 }
 
 # Helper function for plain auth fallback
