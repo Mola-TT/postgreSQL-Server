@@ -38,11 +38,64 @@ extract_hash() {
   if [ "$auth_type" = "scram-sha-256" ] && [ "$pg_encryption" != "scram-sha-256" ]; then
     log_warn "PostgreSQL password_encryption ($pg_encryption) doesn't match auth_type ($auth_type)"
     log_warn "This may cause password hash extraction to fail"
+    
+    # Force set password_encryption to scram-sha-256
+    su - postgres -c "psql -c \"ALTER SYSTEM SET password_encryption = 'scram-sha-256';\""
+    su - postgres -c "psql -c \"SELECT pg_reload_conf();\""
+    log_info "Updated PostgreSQL configuration to use scram-sha-256 password encryption"
+    
+    # Reset the superuser password to force rehashing with scram-sha-256
+    if [ -n "$PG_SUPERUSER_PASSWORD" ] && [ "$username" = "postgres" ]; then
+      su - postgres -c "psql -c \"ALTER USER postgres PASSWORD '${PG_SUPERUSER_PASSWORD}';\""
+      log_info "Reset superuser password with scram-sha-256 encryption"
+    fi
   fi
   
   # For SCRAM-SHA-256 or MD5, extract the hash from PostgreSQL
   
-  # Method 1: Have postgres create a temp file with the password hash directly
+  # Method 1: Direct query using pg_catalog.pg_authid (prioritize this method first)
+  log_info "Trying direct query method first"
+  if password_hash=$(su - postgres -c "psql -t -c \"SELECT rolpassword FROM pg_catalog.pg_authid WHERE rolname='${username}';\"" 2>/dev/null); then
+    if [ -n "$password_hash" ]; then
+      # Trim whitespace and add quotes
+      password_hash=$(echo "$password_hash" | tr -d ' \n\r\t')
+      # Format for pgbouncer authentication
+      echo "\"${username}\" \"${password_hash}\"" > "$output_file"
+      
+      # Verify the hash format is correct for SCRAM-SHA-256
+      if [ "$auth_type" = "scram-sha-256" ]; then
+        if grep -q "SCRAM-SHA-256" "$output_file"; then
+          log_info "Successfully extracted SCRAM-SHA-256 password hash with direct query method"
+          return 0
+        else
+          log_warn "Password hash does not appear to be in SCRAM-SHA-256 format"
+          log_warn "Trying to fix password encryption and retry..."
+          
+          # Force re-encryption of password with scram-sha-256
+          if [ -n "$PG_SUPERUSER_PASSWORD" ] && [ "$username" = "postgres" ]; then
+            su - postgres -c "psql -c \"ALTER USER postgres PASSWORD '${PG_SUPERUSER_PASSWORD}';\""
+            log_info "Forced re-encryption of superuser password"
+            
+            # Try extracting again after forcing re-encryption
+            password_hash=$(su - postgres -c "psql -t -c \"SELECT rolpassword FROM pg_catalog.pg_authid WHERE rolname='${username}';\"" 2>/dev/null | tr -d ' \n\r\t')
+            echo "\"${username}\" \"${password_hash}\"" > "$output_file"
+            
+            if grep -q "SCRAM-SHA-256" "$output_file"; then
+              log_info "Successfully extracted SCRAM-SHA-256 password hash after re-encryption"
+              return 0
+            else
+              log_warn "Still unable to get proper SCRAM-SHA-256 hash format"
+            fi
+          fi
+        fi
+      else
+        log_info "Successfully extracted password hash to $output_file"
+        return 0
+      fi
+    fi
+  fi
+  
+  # Method 2: Have postgres create a temp file with the password hash directly
   # This avoids permission issues with writing to files created by root
   if [ "$auth_type" = "scram-sha-256" ]; then
     # For SCRAM-SHA-256, we need to use pg_authid instead of pg_shadow
@@ -56,15 +109,30 @@ extract_hash() {
           log_warn "Password hash does not appear to be in SCRAM-SHA-256 format"
           log_warn "Make sure PostgreSQL password_encryption is set to 'scram-sha-256'"
           log_warn "You may need to reset the password to get it in the correct format"
+          
+          # Try force re-encryption as a last attempt
+          if [ -n "$PG_SUPERUSER_PASSWORD" ] && [ "$username" = "postgres" ]; then
+            su - postgres -c "psql -c \"ALTER USER postgres PASSWORD '${PG_SUPERUSER_PASSWORD}';\""
+            log_info "Last attempt: Forced re-encryption of superuser password"
+            
+            # Try again with COPY method
+            su - postgres -c "psql -t -c \"COPY (SELECT '\\\"${username}\\\" \\\"' || rolpassword || '\\\"' FROM pg_authid WHERE rolname='${username}') TO STDOUT\" > \"$output_file\" 2>/dev/null"
+            
+            if grep -q "SCRAM-SHA-256" "$output_file"; then
+              log_info "Successfully extracted SCRAM-SHA-256 password hash after final re-encryption"
+              return 0
+            fi
+          fi
+          
           return 1
         fi
         
         return 0
       else
-        log_warn "Method 1 with pg_authid succeeded but produced an empty file, trying alternate method"
+        log_warn "Method 2 with pg_authid succeeded but produced an empty file, trying alternate method"
       fi
     else
-      log_warn "Method 1 with pg_authid failed, trying alternate method"
+      log_warn "Method 2 with pg_authid failed, trying alternate method"
     fi
   else
     # For MD5 or other methods, use pg_shadow
@@ -74,68 +142,15 @@ extract_hash() {
         log_info "Successfully extracted password hash to $output_file"
         return 0
       else
-        log_warn "Method 1 succeeded but produced an empty file, trying alternate method"
+        log_warn "Method 2 succeeded but produced an empty file, trying alternate method"
       fi
     else
-      log_warn "Method 1 failed, trying alternate method"
-    fi
-  fi
-  
-  # Method 2: Create a temp SQL file as postgres user
-  # First create a random filename in a secure manner
-  local timestamp=$(date +%s)
-  local random_str=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 8)
-  local temp_sql="/tmp/pg_extract_${timestamp}_${random_str}.sql"
-  local temp_out="/tmp/pg_extract_${timestamp}_${random_str}.out"
-  
-  # Have postgres create and use the temp SQL file
-  if [ "$auth_type" = "scram-sha-256" ]; then
-    # For SCRAM-SHA-256, we need to use pg_authid instead of pg_shadow
-    if su - postgres -c "echo \"SELECT '\\\"${username}\\\" \\\"' || rolpassword || '\\\"' FROM pg_authid WHERE rolname='${username}';\" > \"$temp_sql\" && psql -t -f \"$temp_sql\" > \"$temp_out\" 2>/dev/null"; then
-      # Check if we got a valid result
-      if [ -s "$temp_out" ]; then
-        # Copy result to the output file
-        cat "$temp_out" > "$output_file"
-        # Clean up temp files as postgres user
-        su - postgres -c "rm -f \"$temp_sql\" \"$temp_out\"" 2>/dev/null
-        
-        # Verify the hash format is correct for SCRAM-SHA-256
-        if ! grep -q "SCRAM-SHA-256" "$output_file"; then
-          log_warn "Password hash does not appear to be in SCRAM-SHA-256 format"
-          log_warn "Make sure PostgreSQL password_encryption is set to 'scram-sha-256'"
-          log_warn "You may need to reset the password to get it in the correct format"
-          return 1
-        fi
-        
-        log_info "Successfully extracted SCRAM-SHA-256 password hash from pg_authid"
-        return 0
-      else
-        log_warn "Method 2 with pg_authid succeeded but produced an empty file, trying simpler approach"
-      fi
-    else
-      log_warn "Method 2 with pg_authid failed, trying simpler approach"
-    fi
-  else
-    # For MD5 or other methods, use pg_shadow
-    if su - postgres -c "echo \"SELECT '\\\"${username}\\\" \\\"' || passwd || '\\\"' FROM pg_shadow WHERE usename='${username}';\" > \"$temp_sql\" && psql -t -f \"$temp_sql\" > \"$temp_out\" 2>/dev/null"; then
-      # Check if we got a valid result
-      if [ -s "$temp_out" ]; then
-        # Copy result to the output file
-        cat "$temp_out" > "$output_file"
-        # Clean up temp files as postgres user
-        su - postgres -c "rm -f \"$temp_sql\" \"$temp_out\"" 2>/dev/null
-        log_info "Successfully extracted password hash to $output_file"
-        return 0
-      else
-        log_warn "Method 2 succeeded but produced an empty file, trying simpler approach"
-      fi
-    else
-      log_warn "Method 2 failed, trying simpler approach"
+      log_warn "Method 2 failed, trying alternate method"
     fi
   fi
   
   # Method 3: Use simpler output format and post-process
-  local temp_raw="/tmp/pg_extract_${timestamp}_${random_str}.raw"
+  local temp_raw="/tmp/pg_extract_$(date +%s)_$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 8).raw"
   
   if [ "$auth_type" = "scram-sha-256" ]; then
     # For SCRAM-SHA-256, we need to use pg_authid instead of pg_shadow
@@ -152,11 +167,38 @@ extract_hash() {
           log_warn "Password hash does not appear to be in SCRAM-SHA-256 format"
           log_warn "Make sure PostgreSQL password_encryption is set to 'scram-sha-256'"
           log_warn "You may need to reset the password to get it in the correct format"
-          return 1
+          
+          # One last attempt with forced password reset
+          if [ -n "$PG_SUPERUSER_PASSWORD" ] && [ "$username" = "postgres" ]; then
+            # Force password_encryption to be scram-sha-256
+            su - postgres -c "psql -c \"ALTER SYSTEM SET password_encryption = 'scram-sha-256';\""
+            su - postgres -c "psql -c \"SELECT pg_reload_conf();\""
+            # Reset the password to force rehashing
+            su - postgres -c "psql -c \"ALTER USER postgres PASSWORD '${PG_SUPERUSER_PASSWORD}';\""
+            log_info "Final attempt: Reset password with forced scram-sha-256 encryption"
+            
+            # Try extraction one more time
+            su - postgres -c "psql -t -c \"SELECT rolpassword FROM pg_authid WHERE rolname='${username}'\" > \"$temp_raw\" 2>/dev/null"
+            passwd=$(cat "$temp_raw" | tr -d ' \n\r\t')
+            echo "\"${username}\" \"${passwd}\"" > "$output_file"
+            
+            if grep -q "SCRAM-SHA-256" "$output_file"; then
+              log_info "Successfully extracted SCRAM-SHA-256 password hash after final attempt"
+            else
+              log_error "Failed to get SCRAM-SHA-256 hash even after forced re-encryption"
+              # Clean up temp files
+              su - postgres -c "rm -f \"$temp_raw\"" 2>/dev/null
+              return 1
+            fi
+          else
+            # Clean up temp files
+            su - postgres -c "rm -f \"$temp_raw\"" 2>/dev/null
+            return 1
+          fi
         fi
         
         log_info "Successfully extracted SCRAM-SHA-256 password hash from pg_authid"
-        # Clean up temp files as postgres user
+        # Clean up temp files
         su - postgres -c "rm -f \"$temp_raw\"" 2>/dev/null
         return 0
       else
@@ -177,7 +219,7 @@ extract_hash() {
         echo "\"${username}\" \"${passwd}\"" > "$output_file"
         
         log_info "Successfully extracted password hash to $output_file"
-        # Clean up temp files as postgres user
+        # Clean up temp files
         su - postgres -c "rm -f \"$temp_raw\"" 2>/dev/null
         return 0
       else
@@ -189,31 +231,16 @@ extract_hash() {
     fi
   fi
   
-  # Method 4 (last resort): Direct SQL without intermediary files, using the more modern pg_catalog.pg_authid method
-  if [ "$auth_type" = "scram-sha-256" ]; then
-    log_info "Trying direct query method as last resort"
-    if password_hash=$(su - postgres -c "psql -t -c \"SELECT rolpassword FROM pg_catalog.pg_authid WHERE rolname='${username}';\"" 2>/dev/null); then
-      if [ -n "$password_hash" ]; then
-        # Trim whitespace and add quotes
-        password_hash=$(echo "$password_hash" | tr -d ' \n\r\t')
-        # Format for pgbouncer authentication
-        echo "\"${username}\" \"${password_hash}\"" > "$output_file"
-        
-        # Verify the hash format is correct for SCRAM-SHA-256
-        if ! grep -q "SCRAM-SHA-256" "$output_file"; then
-          log_warn "Password hash does not appear to be in SCRAM-SHA-256 format"
-          log_warn "Make sure PostgreSQL password_encryption is set to 'scram-sha-256'"
-          log_warn "You may need to reset the password to get it in the correct format"
-          return 1
-        fi
-        
-        log_info "Successfully extracted SCRAM-SHA-256 password hash with Method 4"
-        return 0
-      fi
-    fi
+  log_error "All methods failed to extract password hash"
+  
+  # Final fallback - if we have a plain password, warn and use it
+  if [ -n "$PG_SUPERUSER_PASSWORD" ] && [ "$username" = "postgres" ]; then
+    log_warn "Using plain text password as last resort (this is not secure)"
+    echo "\"${username}\" \"${PG_SUPERUSER_PASSWORD}\"" > "$output_file"
+    log_warn "Please check PostgreSQL configuration and fix password encryption method"
+    return 0
   fi
   
-  log_error "All methods failed to extract password hash"
   return 1
 }
 

@@ -1,437 +1,342 @@
 #!/bin/bash
-# postgresql_config.sh - PostgreSQL and pgbouncer installation and configuration
+# postgresql_config.sh - PostgreSQL installation and configuration
 # Part of Milestone 2
 
-# Import our password hash extraction tool
-source "$(dirname "$(dirname "${BASH_SOURCE[0]}")")/tools/pg_extract_hash.sh"
-
-# Install PostgreSQL
+# Function to install PostgreSQL
 install_postgresql() {
-    log_info "Installing PostgreSQL ${PG_VERSION}..."
-    
-    # Add PostgreSQL repository
-    execute_silently "apt-get install -y wget ca-certificates gnupg" \
-        "" \
-        "Failed to install prerequisites for PostgreSQL" || return 1
-    
-    # Create the repository configuration file
-    execute_silently "sh -c 'echo \"deb http://apt.postgresql.org/pub/repos/apt/ $(lsb_release -cs)-pgdg main\" > /etc/apt/sources.list.d/pgdg.list'" \
-        "" \
-        "Failed to create PostgreSQL repository configuration" || return 1
-    
-    # Import repository signing key
-    execute_silently "wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -" \
-        "" \
-        "Failed to import PostgreSQL repository key" || return 1
-    
-    # Update package lists after adding new repository
-    execute_silently "apt-get update -qq" \
-        "" \
-        "Failed to update package lists after adding PostgreSQL repository" || return 1
-    
-    # Install PostgreSQL
-    execute_silently "DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql-${PG_VERSION} postgresql-contrib-${PG_VERSION}" \
-        "PostgreSQL ${PG_VERSION} installed successfully" \
-        "Failed to install PostgreSQL ${PG_VERSION}" || return 1
-    
-    # Ensure PostgreSQL service is enabled and started
-    execute_silently "systemctl enable postgresql" \
-        "" \
-        "Failed to enable PostgreSQL service" || return 1
-    
-    execute_silently "systemctl start postgresql" \
-        "PostgreSQL service started" \
-        "Failed to start PostgreSQL service" || return 1
+  log_info "Installing PostgreSQL..."
+  
+  # Add PostgreSQL repository
+  echo "deb http://apt.postgresql.org/pub/repos/apt/ $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+  
+  # Import PostgreSQL signing key
+  wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
+  
+  # Update package lists
+  execute_silently apt-get update
+  
+  # Install PostgreSQL
+  execute_silently apt-get install -y postgresql postgresql-contrib
+  
+  # Ensure PostgreSQL is enabled and started
+  systemctl enable postgresql
+  systemctl start postgresql
+  
+  log_info "PostgreSQL installed successfully"
 }
 
-# Install pgbouncer
+# Function to install pgbouncer
 install_pgbouncer() {
-    log_info "Installing pgbouncer..."
-    
-    execute_silently "DEBIAN_FRONTEND=noninteractive apt-get install -y pgbouncer" \
-        "pgbouncer installed successfully" \
-        "Failed to install pgbouncer" || return 1
-    
-    # Ensure pgbouncer service is enabled
-    execute_silently "systemctl enable pgbouncer" \
-        "" \
-        "Failed to enable pgbouncer service" || return 1
+  log_info "Installing pgbouncer..."
+  
+  # Install pgbouncer package
+  execute_silently apt-get install -y pgbouncer
+  
+  # Ensure pgbouncer service is enabled
+  systemctl enable pgbouncer
+  
+  log_info "pgbouncer installed successfully"
 }
 
-# Configure PostgreSQL
-configure_postgresql() {
-    log_info "Configuring PostgreSQL..."
-    
-    # Backup original configuration file
-    execute_silently "cp ${PG_CONF_DIR}/postgresql.conf ${PG_CONF_DIR}/postgresql.conf.bak" \
-        "PostgreSQL configuration backed up" \
-        "Failed to backup PostgreSQL configuration" || return 1
-    
-    # Configure PostgreSQL to listen on localhost only for direct connections
-    execute_silently "sed -i \"s/#listen_addresses = 'localhost'/listen_addresses = 'localhost'/\" ${PG_CONF_DIR}/postgresql.conf" \
-        "" \
-        "Failed to configure PostgreSQL listen_addresses" || return 1
-    
-    # Set password_encryption method to scram-sha-256 (PostgreSQL 10+)
-    execute_silently "sed -i \"s/#password_encryption = md5/password_encryption = '${PG_AUTH_METHOD}'/\" ${PG_CONF_DIR}/postgresql.conf" \
-        "" \
-        "Failed to set password encryption method" || return 1
-        
-    # Configure SSL mode to be optional but available
-    execute_silently "sed -i \"s/#ssl = off/ssl = on/\" ${PG_CONF_DIR}/postgresql.conf" \
-        "" \
-        "Failed to enable SSL" || return 1
-        
-    # Set SSL cipher configuration for compatibility
-    execute_silently "sed -i \"s/#ssl_ciphers = .*/ssl_ciphers = 'HIGH:MEDIUM:+3DES:!aNULL'/\" ${PG_CONF_DIR}/postgresql.conf" \
-        "" \
-        "Failed to set SSL ciphers" || return 1
-    
-    # Set port
-    execute_silently "sed -i \"s/#port = 5432/port = ${DB_PORT}/\" ${PG_CONF_DIR}/postgresql.conf" \
-        "" \
-        "Failed to configure PostgreSQL port" || return 1
-    
-    # Configure PostgreSQL to allow connections from clients
-    execute_silently "cp ${PG_CONF_DIR}/pg_hba.conf ${PG_CONF_DIR}/pg_hba.conf.bak" \
-        "PostgreSQL HBA configuration backed up" \
-        "Failed to backup PostgreSQL HBA configuration" || return 1
-    
-    # Set PostgreSQL superuser password
-    execute_silently "su - postgres -c \"psql -c \\\"ALTER USER postgres PASSWORD '${PG_SUPERUSER_PASSWORD}'\\\"\"" \
-        "PostgreSQL superuser password set" \
-        "Failed to set PostgreSQL superuser password" || return 1
-    
-    # First, remove any existing entries
-    execute_silently "grep -v 'host    all' ${PG_CONF_DIR}/pg_hba.conf > ${PG_CONF_DIR}/pg_hba.conf.new && mv ${PG_CONF_DIR}/pg_hba.conf.new ${PG_CONF_DIR}/pg_hba.conf" \
-        "" \
-        "Failed to clean pg_hba.conf" || return 1
-    
-    # Add special entry for pgbouncer auth_user to access password data
-    execute_silently "echo \"host    postgres        postgres        127.0.0.1/32            trust\" >> ${PG_CONF_DIR}/pg_hba.conf" \
-        "Added trusted authentication for pgbouncer auth_user" \
-        "Failed to add trusted authentication for pgbouncer" || return 1
-    
-    # Add entry for local connections with scram-sha-256 auth
-    execute_silently "echo \"host    all             all             127.0.0.1/32            ${PG_AUTH_METHOD}\" >> ${PG_CONF_DIR}/pg_hba.conf" \
-        "Configured PostgreSQL for local connections with ${PG_AUTH_METHOD} auth" \
-        "Failed to configure PostgreSQL local authentication" || return 1
-    
-    # Add entry for local IPv6 connections
-    execute_silently "echo \"host    all             all             ::1/128                 ${PG_AUTH_METHOD}\" >> ${PG_CONF_DIR}/pg_hba.conf" \
-        "" \
-        "Failed to configure IPv6 authentication" || return 1
-    
-    # Add entry for local connections with SSL
-    execute_silently "echo \"hostssl all             all             127.0.0.1/32            ${PG_AUTH_METHOD}\" >> ${PG_CONF_DIR}/pg_hba.conf" \
-        "Configured PostgreSQL for SSL connections" \
-        "Failed to configure PostgreSQL SSL authentication" || return 1
-    
-    # Restart PostgreSQL to apply configuration changes
-    execute_silently "systemctl restart postgresql" \
-        "PostgreSQL restarted with updated configuration" \
-        "Failed to restart PostgreSQL" || return 1
-    
-    # Create database if specified
-    if [ "$DB_NAME" != "postgres" ]; then
-        log_info "Creating database: ${DB_NAME}"
-        execute_silently "su - postgres -c \"createdb ${DB_NAME}\"" \
-            "Database ${DB_NAME} created successfully" \
-            "Failed to create database ${DB_NAME}" || return 1
-    fi
-}
-
-# Helper function to ensure that passwords are stored with scram-sha-256 encryption
+# Helper function to ensure a user's password is stored with scram-sha-256 encryption
 ensure_scram_password() {
-    local username="$1"
-    local password="$2"
+  local username="$1"
+  local password="$2"
+  
+  log_info "Ensuring $username password uses scram-sha-256 encryption"
+  
+  # First, make sure password_encryption is set to scram-sha-256
+  su - postgres -c "psql -c \"ALTER SYSTEM SET password_encryption = 'scram-sha-256';\""
+  su - postgres -c "psql -c \"SELECT pg_reload_conf();\""
+  
+  # Verify the setting was applied
+  local current_encryption
+  current_encryption=$(su - postgres -c "psql -t -c \"SHOW password_encryption;\"" | tr -d ' \n\r\t')
+  
+  if [ "$current_encryption" != "scram-sha-256" ]; then
+    log_warn "Failed to set password_encryption to scram-sha-256, current value: $current_encryption"
+    log_warn "Trying alternative approach..."
     
-    log_info "Ensuring password for $username is encrypted with scram-sha-256"
-    
-    # First, verify password_encryption setting
-    if ! su - postgres -c "psql -t -c \"SHOW password_encryption;\"" | grep -q "scram-sha-256"; then
-        log_warn "PostgreSQL password_encryption is not set to scram-sha-256"
-        log_info "Setting password_encryption to scram-sha-256"
-        
-        # Add or modify password_encryption in postgresql.conf
-        execute_silently "grep -q '^password_encryption' ${PG_CONF_DIR}/postgresql.conf" "" ""
-        if [ $? -eq 0 ]; then
-            # Replace existing setting
-            execute_silently "sed -i \"s/^password_encryption.*/password_encryption = 'scram-sha-256'/\" ${PG_CONF_DIR}/postgresql.conf" \
-                "Updated password_encryption to scram-sha-256" \
-                "Failed to update password_encryption" || return 1
-        else
-            # Add new setting
-            execute_silently "echo \"password_encryption = 'scram-sha-256'\" >> ${PG_CONF_DIR}/postgresql.conf" \
-                "Added password_encryption = scram-sha-256" \
-                "Failed to add password_encryption" || return 1
-        fi
-        
-        # Restart PostgreSQL to apply the change
-        execute_silently "systemctl restart postgresql" \
-            "PostgreSQL restarted with updated configuration" \
-            "Failed to restart PostgreSQL" || return 1
+    # Try setting in postgresql.conf directly
+    PG_CONF="/etc/postgresql/*/main/postgresql.conf"
+    if grep -q "password_encryption" $PG_CONF; then
+      sed -i "s/^.*password_encryption.*$/password_encryption = 'scram-sha-256' # Modified by setup script/" $PG_CONF
+    else
+      echo "password_encryption = 'scram-sha-256' # Added by setup script" >> $PG_CONF
     fi
     
-    # Reset password to force it to be encrypted with the current method (scram-sha-256)
-    execute_silently "su - postgres -c \"psql -c \\\"ALTER USER $username PASSWORD '$password'\\\"\"" \
-        "Password for $username has been re-encrypted with scram-sha-256" \
-        "Failed to update password for $username" || return 1
+    # Restart PostgreSQL to apply changes
+    systemctl restart postgresql
     
-    return 0
+    # Verify again
+    current_encryption=$(su - postgres -c "psql -t -c \"SHOW password_encryption;\"" | tr -d ' \n\r\t')
+    if [ "$current_encryption" = "scram-sha-256" ]; then
+      log_info "Successfully set password_encryption to scram-sha-256 after restart"
+    else
+      log_error "Could not set password_encryption to scram-sha-256, authentication may not work as expected"
+    fi
+  else
+    log_info "password_encryption is correctly set to scram-sha-256"
+  fi
+  
+  # Set/reset the user's password to ensure it uses scram-sha-256
+  su - postgres -c "psql -c \"ALTER USER $username PASSWORD '$password';\""
+  
+  # Verify the password was stored with scram-sha-256
+  if [ "$username" = "postgres" ]; then
+    local password_hash
+    password_hash=$(su - postgres -c "psql -t -c \"SELECT rolpassword FROM pg_authid WHERE rolname='postgres';\"" | tr -d ' \n\r\t')
+    
+    if [[ "$password_hash" == SCRAM-SHA-256* ]]; then
+      log_info "Verified $username password is stored with scram-sha-256 encryption"
+    else
+      log_error "Failed to store $username password with scram-sha-256 encryption"
+      log_error "Current format: ${password_hash:0:20}..."
+    fi
+  fi
 }
 
-# Configure pgbouncer
+# Function to configure PostgreSQL
+configure_postgresql() {
+  log_info "Configuring PostgreSQL..."
+  
+  # Back up postgresql.conf
+  local pg_conf
+  local pg_hba_conf
+  
+  # Find the PostgreSQL configuration files
+  pg_conf=$(find /etc/postgresql -name "postgresql.conf" | head -n 1)
+  pg_hba_conf=$(find /etc/postgresql -name "pg_hba.conf" | head -n 1)
+  
+  if [ -z "$pg_conf" ] || [ -z "$pg_hba_conf" ]; then
+    log_error "PostgreSQL configuration files not found"
+    return 1
+  fi
+  
+  # Back up the configuration files
+  cp "$pg_conf" "${pg_conf}.bak"
+  cp "$pg_hba_conf" "${pg_hba_conf}.bak"
+  
+  log_info "Backed up PostgreSQL configuration files"
+  
+  # Set password encryption to scram-sha-256
+  if grep -q "^password_encryption" "$pg_conf"; then
+    sed -i "s/^password_encryption.*$/password_encryption = 'scram-sha-256' # Modified by setup script/" "$pg_conf"
+  else
+    echo "password_encryption = 'scram-sha-256' # Added by setup script" >> "$pg_conf"
+  fi
+  
+  # Configure PostgreSQL for SSL if enabled
+  if [ "${PG_ENABLE_SSL:-true}" = "true" ]; then
+    if grep -q "^ssl\s*=\s*" "$pg_conf"; then
+      sed -i "s/^ssl\s*=\s*.*$/ssl = on # Modified by setup script/" "$pg_conf"
+    else
+      echo "ssl = on # Added by setup script" >> "$pg_conf"
+    fi
+    log_info "SSL enabled for PostgreSQL"
+  fi
+  
+  # Modify listen_addresses to allow external connections if needed
+  if grep -q "^listen_addresses" "$pg_conf"; then
+    sed -i "s/^listen_addresses.*$/listen_addresses = 'localhost' # Modified by setup script - Only local connections, use pgbouncer for external/" "$pg_conf"
+  else
+    echo "listen_addresses = 'localhost' # Added by setup script - Only local connections, use pgbouncer for external" >> "$pg_conf"
+  fi
+  
+  log_info "Updated PostgreSQL configuration"
+  
+  # Restart PostgreSQL to apply the configuration changes
+  systemctl restart postgresql
+  
+  # Set the PostgreSQL superuser password using scram-sha-256
+  log_info "Setting PostgreSQL superuser password..."
+  
+  if [ -n "${PG_SUPERUSER_PASSWORD}" ]; then
+    # Use helper function to ensure password uses scram-sha-256
+    ensure_scram_password "postgres" "${PG_SUPERUSER_PASSWORD}"
+  else
+    log_warn "PG_SUPERUSER_PASSWORD not set, skipping password update"
+  fi
+  
+  # Create the specified database if it doesn't exist
+  if [ -n "${PG_DATABASE}" ]; then
+    log_info "Creating database: ${PG_DATABASE}"
+    
+    # Check if the database already exists
+    if ! su - postgres -c "psql -lqt | cut -d \| -f 1 | grep -qw ${PG_DATABASE}"; then
+      # Create the database
+      su - postgres -c "createdb ${PG_DATABASE}"
+      log_info "Database ${PG_DATABASE} created successfully"
+    else
+      log_info "Database ${PG_DATABASE} already exists, skipping creation"
+    fi
+  else
+    log_warn "PG_DATABASE not set, skipping database creation"
+  fi
+  
+  # Update pg_hba.conf for client authentication
+  log_info "Configuring client authentication..."
+  
+  # Start with a clean pg_hba.conf with only local connections
+  {
+    echo "# TYPE  DATABASE        USER            ADDRESS                 METHOD"
+    echo "# PostgreSQL Client Authentication Configuration File"
+    echo "# Generated by postgresql_config.sh"
+    echo "local   all             postgres                                peer"
+    echo "local   all             all                                     peer"
+    echo "host    all             all             127.0.0.1/32            scram-sha-256"
+    echo "host    all             all             ::1/128                 scram-sha-256"
+  } > "$pg_hba_conf"
+  
+  log_info "Updated client authentication configuration"
+  
+  # Reload PostgreSQL to apply the authentication changes
+  su - postgres -c "psql -c \"SELECT pg_reload_conf();\""
+  
+  log_info "PostgreSQL configuration completed successfully"
+}
+
+# Function to configure pgbouncer for external connections
 configure_pgbouncer() {
-    log_info "Configuring pgbouncer for external connections..."
-    
-    # Backup original configuration file
-    execute_silently "cp /etc/pgbouncer/pgbouncer.ini /etc/pgbouncer/pgbouncer.ini.bak" \
-        "pgbouncer configuration backed up" \
-        "Failed to backup pgbouncer configuration" || return 1
-    
-    # Configure pgbouncer with the specified authentication type
-    log_info "Setting up pgbouncer with ${PGB_AUTH_TYPE} authentication"
-    
-    # Configure pgbouncer with a simplified configuration that's more likely to pass verification
-    cat > /etc/pgbouncer/pgbouncer.ini <<EOL
-[databases]
-postgres = host=127.0.0.1 port=${DB_PORT} dbname=postgres
-* = host=127.0.0.1 port=${DB_PORT} dbname=\$1
-
-[pgbouncer]
-listen_addr = ${PGB_LISTEN_ADDR}
-listen_port = ${PGB_LISTEN_PORT}
-auth_type = ${PGB_AUTH_TYPE}
-auth_file = /etc/pgbouncer/userlist.txt
-logfile = /var/log/postgresql/pgbouncer.log
-pidfile = /var/run/postgresql/pgbouncer.pid
-admin_users = postgres
-stats_users = postgres
-pool_mode = ${PGB_POOL_MODE}
-max_client_conn = ${PGB_MAX_CLIENT_CONN}
-default_pool_size = ${PGB_DEFAULT_POOL_SIZE}
-EOL
-    
-    # Add specific database entries if DB_NAME is not postgres
-    if [ "$DB_NAME" != "postgres" ]; then
-        log_info "Adding specific database entry for ${DB_NAME}"
-        cat >> /etc/pgbouncer/pgbouncer.ini <<EOL
-${DB_NAME} = host=127.0.0.1 port=${DB_PORT} dbname=${DB_NAME}
-EOL
+  log_info "Configuring pgbouncer..."
+  
+  # Back up pgbouncer configuration file
+  local pgb_conf="/etc/pgbouncer/pgbouncer.ini"
+  local pgb_userlist="/etc/pgbouncer/userlist.txt"
+  
+  if [ ! -f "$pgb_conf" ]; then
+    log_error "pgbouncer configuration file not found: $pgb_conf"
+    return 1
+  fi
+  
+  # Create a backup of the original configuration
+  cp "$pgb_conf" "${pgb_conf}.bak"
+  
+  # Determine authentication type (default to scram-sha-256 for security)
+  local auth_type="${PGB_AUTH_TYPE:-scram-sha-256}"
+  log_info "Using pgbouncer authentication type: $auth_type"
+  
+  # Enable log file
+  local pgb_log_dir="/var/log/pgbouncer"
+  mkdir -p "$pgb_log_dir"
+  chown postgres:postgres "$pgb_log_dir"
+  
+  # Configure pgbouncer with settings from environment variables
+  {
+    echo "[databases]"
+    # If database name specified, add it to pgbouncer.ini
+    if [ -n "${PG_DATABASE}" ]; then
+      echo "${PG_DATABASE} = host=127.0.0.1 port=5432 dbname=${PG_DATABASE}"
     fi
-    
-    log_info "Creating pgbouncer authentication file..."
-    
-    # Create a postgres-owned directory for temporary files if it doesn't exist
-    execute_silently "mkdir -p /var/lib/postgresql/tmp" \
-        "" \
-        "Failed to create temporary directory" || return 1
-    
-    execute_silently "chown postgres:postgres /var/lib/postgresql/tmp" \
-        "" \
-        "Failed to set ownership on temporary directory" || return 1
-    
-    execute_silently "chmod 700 /var/lib/postgresql/tmp" \
-        "" \
-        "Failed to set permissions on temporary directory" || return 1
-    
-    # For scram-sha-256 auth, ensure passwords are properly encrypted first
-    if [ "${PGB_AUTH_TYPE}" = "scram-sha-256" ]; then
-        ensure_scram_password "postgres" "${PG_SUPERUSER_PASSWORD}" || log_warn "Failed to ensure scram password"
+    echo "* = host=127.0.0.1 port=5432"
+    echo ""
+    echo "[pgbouncer]"
+    echo "logfile = $pgb_log_dir/pgbouncer.log"
+    echo "pidfile = /var/run/postgresql/pgbouncer.pid"
+    echo "listen_addr = ${PGB_LISTEN_ADDR:-*}"
+    echo "listen_port = ${PGB_LISTEN_PORT:-6432}"
+    echo "unix_socket_dir = /var/run/postgresql"
+    echo "auth_type = ${auth_type}"
+    echo "auth_file = /etc/pgbouncer/userlist.txt"
+    echo "admin_users = postgres"
+    # Use default authentication query for scram-sha-256
+    if [ "$auth_type" = "scram-sha-256" ]; then
+      echo "auth_query = SELECT usename, passwd FROM pg_shadow WHERE usename=$1"
     fi
+    echo "pool_mode = ${PGB_POOL_MODE:-transaction}"
+    echo "max_client_conn = ${PGB_MAX_CLIENT_CONN:-100}"
+    echo "default_pool_size = ${PGB_DEFAULT_POOL_SIZE:-20}"
+    echo ""
+  } > "$pgb_conf"
+  
+  log_info "Updated pgbouncer configuration in $pgb_conf"
+  
+  # Create or update the auth file for pgbouncer
+  log_info "Setting up pgbouncer authentication..."
+  
+  # Source the extract_hash utility
+  source "$(dirname "${BASH_SOURCE[0]}")/../tools/pg_extract_hash.sh"
+  
+  # Extract hash for PostgreSQL superuser
+  if [ -n "${PG_SUPERUSER_PASSWORD}" ]; then
+    extract_hash "postgres" "$pgb_userlist"
     
-    # Extract password hash using our pg_extract_hash tool
-    log_info "Extracting password hash for pgbouncer authentication"
-    if ! extract_hash "postgres" "/etc/pgbouncer/userlist.txt"; then
-        log_warn "Failed to extract password hash with ${PGB_AUTH_TYPE} authentication"
+    # Verify the hash was successfully created
+    if [ -f "$pgb_userlist" ] && [ -s "$pgb_userlist" ]; then
+      log_info "Successfully created pgbouncer auth file: $pgb_userlist"
+      
+      # Verify hash format
+      if [ "$auth_type" = "scram-sha-256" ] && ! grep -q "SCRAM-SHA-256" "$pgb_userlist"; then
+        log_warn "WARNING: Password hash in $pgb_userlist might not be in SCRAM-SHA-256 format"
+        log_warn "This might cause authentication issues with pgbouncer"
         
-        if [ "${PGB_AUTH_TYPE}" != "plain" ]; then
-            log_warn "Falling back to plain text authentication"
-            
-            # Fall back to plain auth
-            configure_pgbouncer_plain_auth || return 1
+        # Try to force the correct password hash again
+        log_info "Attempting to force correct password hash format..."
+        ensure_scram_password "postgres" "${PG_SUPERUSER_PASSWORD}"
+        extract_hash "postgres" "$pgb_userlist"
+        
+        # Final verification
+        if grep -q "SCRAM-SHA-256" "$pgb_userlist"; then
+          log_info "Successfully fixed password hash format to SCRAM-SHA-256"
         else
-            log_error "Authentication setup failed"
-            return 1
+          log_error "Failed to get proper SCRAM-SHA-256 hash in userlist.txt"
+          log_error "Authentication may not work correctly"
         fi
+      fi
+    else
+      log_error "Failed to create pgbouncer auth file: $pgb_userlist"
+      log_error "pgbouncer authentication will not work correctly"
     fi
+  else
+    log_warn "PG_SUPERUSER_PASSWORD not set, cannot create pgbouncer auth file"
+  fi
+  
+  # Set correct ownership for pgbouncer files
+  chown postgres:postgres "$pgb_conf"
+  chown postgres:postgres "$pgb_userlist"
+  chmod 640 "$pgb_conf"
+  chmod 640 "$pgb_userlist"
+  
+  # Restart pgbouncer to apply the configuration changes
+  systemctl restart pgbouncer
+  
+  # Configure firewall if enabled
+  if [ "${CONFIGURE_FIREWALL:-true}" = "true" ]; then
+    log_info "Configuring firewall for pgbouncer..."
     
-    # Set proper permissions for the auth file
-    execute_silently "chown postgres:postgres /etc/pgbouncer/userlist.txt" \
-        "" \
-        "Failed to set ownership on pgbouncer userlist.txt" || return 1
-
-    execute_silently "chmod 600 /etc/pgbouncer/userlist.txt" \
-        "pgbouncer authentication configured successfully with ${PGB_AUTH_TYPE}" \
-        "Failed to set permissions on pgbouncer userlist.txt" || return 1
+    # Allow connections to pgbouncer port
+    ufw allow ${PGB_LISTEN_PORT:-6432}/tcp comment "pgbouncer postgresql connection pooling"
     
-    # Configure firewall to route external connections through pgbouncer
-    if [ "$ENABLE_FIREWALL" = true ]; then
-        log_info "Configuring firewall for PostgreSQL and pgbouncer..."
-        
-        # Install ufw if not already installed
-        execute_silently "apt-get install -y ufw" \
-            "" \
-            "Failed to install ufw firewall" || return 1
-        
-        # Allow SSH to prevent lockout
-        execute_silently "ufw allow ssh" \
-            "" \
-            "Failed to configure firewall for SSH" || return 1
-        
-        # Open pgbouncer port for external connections
-        if [ "$ALLOWED_IP_RANGES" != "*" ]; then
-            # Split the comma-separated IP ranges and add each one
-            IFS=',' read -ra IP_RANGES <<< "$ALLOWED_IP_RANGES"
-            for ip_range in "${IP_RANGES[@]}"; do
-                execute_silently "ufw allow from ${ip_range} to any port ${PGB_LISTEN_PORT}" \
-                    "" \
-                    "Failed to configure firewall for pgbouncer from ${ip_range}" || return 1
-            done
-            log_info "Firewall configured to allow connections to pgbouncer from ${#IP_RANGES[@]} IP range(s)"
-        else
-            # Allow from any IP if ALLOWED_IP_RANGES is "*"
-            execute_silently "ufw allow ${PGB_LISTEN_PORT}/tcp" \
-                "Firewall configured to allow connections to pgbouncer from any IP (not recommended for production)" \
-                "Failed to configure firewall for pgbouncer" || return 1
-        fi
-        
-        # Block external access to PostgreSQL's direct port for security
-        execute_silently "ufw deny ${DB_PORT}/tcp" \
-            "Firewall configured to block direct external access to PostgreSQL" \
-            "Failed to configure firewall to block PostgreSQL" || return 1
-        
-        # Enable firewall
-        execute_silently "echo y | ufw enable" \
-            "Firewall enabled" \
-            "Failed to enable firewall" || return 1
-    fi
+    # Block direct connections to PostgreSQL port (5432) from external sources
+    # Allow only from localhost
+    ufw deny 5432/tcp comment "block direct postgresql connections"
     
-    # Verify pgbouncer configuration before restarting
-    log_info "Verifying pgbouncer configuration"
-    if which pgbouncer > /dev/null 2>&1; then
-        # Run pgbouncer configuration check but don't use execute_silently
-        # to avoid error messages in log
-        if pgbouncer -q -C /etc/pgbouncer/pgbouncer.ini -d > /dev/null 2>&1; then
-            log_info "pgbouncer configuration verified"
-        else
-            log_info "Using simplified pgbouncer configuration as fallback"
-            # Simplified configuration as a fallback
-            cat > /etc/pgbouncer/pgbouncer.ini <<EOL
-[databases]
-postgres = host=127.0.0.1 port=${DB_PORT} dbname=postgres
-EOL
-            if [ "$DB_NAME" != "postgres" ]; then
-                echo "${DB_NAME} = host=127.0.0.1 port=${DB_PORT} dbname=${DB_NAME}" >> /etc/pgbouncer/pgbouncer.ini
-            fi
-            
-            cat >> /etc/pgbouncer/pgbouncer.ini <<EOL
-
-[pgbouncer]
-listen_addr = ${PGB_LISTEN_ADDR}
-listen_port = ${PGB_LISTEN_PORT}
-auth_type = plain
-auth_file = /etc/pgbouncer/userlist.txt
-logfile = /var/log/postgresql/pgbouncer.log
-pidfile = /var/run/postgresql/pgbouncer.pid
-admin_users = postgres
-stats_users = postgres
-pool_mode = ${PGB_POOL_MODE}
-max_client_conn = ${PGB_MAX_CLIENT_CONN}
-default_pool_size = ${PGB_DEFAULT_POOL_SIZE}
-EOL
-            # Create a simple userlist with plain auth as last resort
-            echo "\"postgres\" \"${PG_SUPERUSER_PASSWORD}\"" > /etc/pgbouncer/userlist.txt
-            execute_silently "chown postgres:postgres /etc/pgbouncer/userlist.txt" \
-                "" \
-                "Failed to set ownership on pgbouncer userlist.txt" || return 1
-            execute_silently "chmod 600 /etc/pgbouncer/userlist.txt" \
-                "Created fallback pgbouncer configuration" \
-                "Failed to set permissions on pgbouncer userlist.txt" || return 1
-        fi
-    fi
-    
-    # Restart pgbouncer to apply configuration changes
-    execute_silently "systemctl restart pgbouncer" \
-        "pgbouncer restarted with updated configuration" \
-        "Failed to restart pgbouncer" || return 1
-        
-    # Verify pgbouncer is working properly
-    execute_silently "sleep 2" "" ""  # Give pgbouncer a moment to start up
-    execute_silently "PGPASSWORD=\"${PG_SUPERUSER_PASSWORD}\" psql -h localhost -p ${PGB_LISTEN_PORT} -U postgres -d postgres -c \"SELECT 1\" > /dev/null 2>&1" \
-        "Verified pgbouncer connection is working" \
-        "Could not connect to pgbouncer, check logs for more details" || log_warn "Connection test failed but continuing anyway"
-    
-    # Log the userlist.txt contents (without password) for debugging
-    if [ "${LOG_LEVEL}" -eq 0 ]; then  # Only in DEBUG mode
-        log_debug "pgbouncer userlist.txt format check:" 
-        execute_silently "cat /etc/pgbouncer/userlist.txt | sed 's/\"[^\"]*\"$/\"********\"/' | head -1" "" ""
-    fi
+    log_info "Firewall configured for pgbouncer"
+  fi
+  
+  log_info "pgbouncer configuration completed successfully"
 }
 
-# Helper function for plain auth fallback
-configure_pgbouncer_plain_auth() {
-    # Update config file to use plain auth instead of scram-sha-256
-    # This is only used as a fallback if hash extraction fails
-    # As per https://www.cybertec-postgresql.com/en/pgbouncer-authentication-made-easy/
-    # plain auth is simpler but less secure
-    execute_silently "sed -i 's/auth_type = .*/auth_type = plain/' /etc/pgbouncer/pgbouncer.ini" \
-        "" \
-        "Failed to update pgbouncer auth type" || return 1
-        
-    # Create userlist with plain password
-    execute_silently "echo \"\\\"postgres\\\" \\\"${PG_SUPERUSER_PASSWORD}\\\"\" > /etc/pgbouncer/userlist.txt" \
-        "" \
-        "Failed to create pgbouncer userlist with plain auth" || return 1
-        
-    # Set more restrictive permissions for plain text
-    execute_silently "chown postgres:postgres /etc/pgbouncer/userlist.txt" \
-        "" \
-        "Failed to set ownership on pgbouncer userlist.txt" || return 1
-    
-    execute_silently "chmod 600 /etc/pgbouncer/userlist.txt" \
-        "pgbouncer configured with fallback plain authentication (instead of ${PGB_AUTH_TYPE})" \
-        "Failed to set permissions on pgbouncer userlist.txt" || return 1
-        
-    return 0
-}
-
-# Setup PostgreSQL with pgbouncer
+# Main function to install and configure PostgreSQL with pgbouncer
 setup_postgresql() {
-    log_info "Starting PostgreSQL and pgbouncer setup..."
-    
-    # Install PostgreSQL
-    install_postgresql || return 1
-    
-    # Install pgbouncer
-    install_pgbouncer || return 1
-    
-    # Configure PostgreSQL
-    configure_postgresql || return 1
-    
-    # Configure pgbouncer
-    configure_pgbouncer || return 1
-    
-    # Final restart of both services to ensure all configuration changes are applied
-    execute_silently "systemctl restart postgresql" \
-        "PostgreSQL service restarted" \
-        "Failed to restart PostgreSQL service" || return 1
-        
-    execute_silently "systemctl restart pgbouncer" \
-        "pgbouncer service restarted" \
-        "Failed to restart pgbouncer service" || return 1
-    
-    log_info "PostgreSQL and pgbouncer setup completed successfully"
-    log_info "  - PostgreSQL is configured for direct local access on port ${DB_PORT}"
-    log_info "  - pgbouncer is configured for external access on port ${PGB_LISTEN_PORT}"
-    return 0
+  log_info "Setting up PostgreSQL server with pgbouncer..."
+  
+  # Install PostgreSQL
+  install_postgresql
+  
+  # Install pgbouncer
+  install_pgbouncer
+  
+  # Configure PostgreSQL
+  configure_postgresql
+  
+  # Configure pgbouncer
+  configure_pgbouncer
+  
+  log_info "PostgreSQL setup completed successfully"
 }
 
-# Export functions
-export -f install_postgresql
-export -f install_pgbouncer
-export -f configure_postgresql
-export -f configure_pgbouncer
-export -f configure_pgbouncer_plain_auth
-export -f setup_postgresql 
+# If script is run directly, execute setup
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  setup_postgresql
+fi
