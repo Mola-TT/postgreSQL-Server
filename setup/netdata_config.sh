@@ -11,20 +11,16 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="$SCRIPT_DIR/../lib"
 
-# Check if lib directory exists, if not try alternate locations
+# Check if lib directory exists
 if [ ! -d "$LIB_DIR" ]; then
-  # Try some common alternate paths
-  for alt_path in "/home/tom/postgreSQL-Server/lib" "$(dirname "$(dirname "$SCRIPT_DIR")")/lib" "$(dirname "$SCRIPT_DIR")/lib"; do
-    if [ -d "$alt_path" ]; then
-      LIB_DIR="$alt_path"
-      break
-    fi
-  done
+  # Try parent directory
+  LIB_DIR="$(dirname "$SCRIPT_DIR")/lib"
+  
+  if [ ! -d "$LIB_DIR" ]; then
+    echo "ERROR: Unable to locate lib directory"
+    exit 1
+  fi
 fi
-
-# Debug output
-echo "SCRIPT_DIR: $SCRIPT_DIR"
-echo "LIB_DIR: $LIB_DIR"
 
 # Source the logger functions
 if [ -f "$LIB_DIR/logger.sh" ]; then
