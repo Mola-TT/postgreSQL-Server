@@ -1,7 +1,7 @@
 Fresh install
 git clone https://github.com/Mola-TT/postgreSQL-Server.git
 cd postgreSQL-Server
-
+nano conf/user.env
 
 chmod +x init.sh
 clear
