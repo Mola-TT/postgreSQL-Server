@@ -28,7 +28,7 @@ source "$SCRIPT_DIR/setup/postgresql_config.sh"
 source "$SCRIPT_DIR/setup/nginx_config.sh"
 
 # Source Netdata configuration
-source "$SCRIPT_DIR/setup//netdata_config.sh"
+source "$SCRIPT_DIR/setup/netdata_config.sh"
 
 
 # Display init banner
