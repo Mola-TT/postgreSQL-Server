@@ -223,12 +223,60 @@ configure_postgresql() {
   
   # Configure PostgreSQL for SSL if enabled
   if [ "${PG_ENABLE_SSL:-true}" = "true" ]; then
+    log_info "Configuring PostgreSQL SSL..."
+    
+    # Determine PostgreSQL data directory
+    local pg_data_dir
+    pg_data_dir=$(su - postgres -c "psql -t -c \"SHOW data_directory;\"" 2>/dev/null | tr -d ' \n\r\t')
+    
+    if [ -z "$pg_data_dir" ]; then
+      log_warn "Could not determine PostgreSQL data directory, using default path"
+      pg_data_dir="/var/lib/postgresql/*/main"
+    fi
+    
+    # Create SSL certificate and key if they don't exist
+    local ssl_cert="$pg_data_dir/server.crt"
+    local ssl_key="$pg_data_dir/server.key"
+    
+    if [ ! -f "$ssl_cert" ] || [ ! -f "$ssl_key" ]; then
+      log_info "Generating PostgreSQL SSL certificate and key..."
+      
+      # Generate SSL certificate and key for PostgreSQL
+      su - postgres -c "openssl req -new -x509 -days 3650 -nodes -text \
+        -out $ssl_cert \
+        -keyout $ssl_key \
+        -subj '/CN=PostgreSQL/O=Database Server/C=HK'" > /dev/null 2>&1
+      
+      # Set appropriate permissions
+      su - postgres -c "chmod 600 $ssl_key" > /dev/null 2>&1
+      su - postgres -c "chmod 644 $ssl_cert" > /dev/null 2>&1
+      
+      log_info "SSL certificate and key generated successfully"
+    else
+      log_info "SSL certificate and key already exist, using existing files"
+    fi
+    
+    # Enable SSL in postgresql.conf
     if grep -q "^ssl\s*=\s*" "$pg_conf"; then
       sed -i "s/^ssl\s*=\s*.*$/ssl = on # Modified by setup script/" "$pg_conf" 2>/dev/null
     else
       echo "ssl = on # Added by setup script" >> "$pg_conf" 2>/dev/null
     fi
-    log_info "SSL enabled for PostgreSQL"
+    
+    # Set SSL certificate and key file paths
+    if grep -q "^ssl_cert_file\s*=\s*" "$pg_conf"; then
+      sed -i "s|^ssl_cert_file\s*=\s*.*$|ssl_cert_file = '$ssl_cert' # Modified by setup script|" "$pg_conf" 2>/dev/null
+    else
+      echo "ssl_cert_file = '$ssl_cert' # Added by setup script" >> "$pg_conf" 2>/dev/null
+    fi
+    
+    if grep -q "^ssl_key_file\s*=\s*" "$pg_conf"; then
+      sed -i "s|^ssl_key_file\s*=\s*.*$|ssl_key_file = '$ssl_key' # Modified by setup script|" "$pg_conf" 2>/dev/null
+    else
+      echo "ssl_key_file = '$ssl_key' # Added by setup script" >> "$pg_conf" 2>/dev/null
+    fi
+    
+    log_info "SSL enabled for PostgreSQL with certificate and key configuration"
   fi
   
   # Modify listen_addresses to allow external connections if needed
@@ -321,9 +369,21 @@ configure_pgbouncer() {
     echo "[databases]"
     # If database name specified, add it to pgbouncer.ini
     if [ -n "${PG_DATABASE}" ]; then
-      echo "${PG_DATABASE} = host=127.0.0.1 port=5432 dbname=${PG_DATABASE}"
+      # If SSL is enabled, add SSL options
+      if [ "${PG_ENABLE_SSL:-true}" = "true" ]; then
+        echo "${PG_DATABASE} = host=127.0.0.1 port=5432 dbname=${PG_DATABASE} sslmode=require"
+      else
+        echo "${PG_DATABASE} = host=127.0.0.1 port=5432 dbname=${PG_DATABASE}"
+      fi
     fi
-    echo "* = host=127.0.0.1 port=5432"
+    
+    # Configure wildcard database with SSL if enabled
+    if [ "${PG_ENABLE_SSL:-true}" = "true" ]; then
+      echo "* = host=127.0.0.1 port=5432 sslmode=require"
+    else
+      echo "* = host=127.0.0.1 port=5432"
+    fi
+    
     echo ""
     echo "[pgbouncer]"
     echo "logfile = $pgb_log_dir/pgbouncer.log"
@@ -342,6 +402,14 @@ configure_pgbouncer() {
     echo "max_client_conn = ${PGB_MAX_CLIENT_CONN:-100}"
     echo "default_pool_size = ${PGB_DEFAULT_POOL_SIZE:-20}"
     echo "ignore_startup_parameters = ${PGB_IGNORE_PARAMS:-extra_float_digits}"
+    
+    # Configure client-side SSL for pgbouncer
+    if [ "${PG_ENABLE_SSL:-true}" = "true" ]; then
+      echo "server_tls_sslmode = require"
+      echo "server_tls_ca_file = /etc/ssl/certs/ca-certificates.crt"
+      echo "client_tls_sslmode = disable"
+    fi
+    
     echo ""
   } > "$pgb_conf" 2>/dev/null
   
