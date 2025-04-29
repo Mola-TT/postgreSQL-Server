@@ -209,7 +209,7 @@ configure_nginx_for_netdata() {
   if ! command -v nginx >/dev/null 2>&1; then
     log_error "Nginx is not installed, cannot configure proxy for Netdata"
     return 1
-  }
+  fi
   
   local domain="${NGINX_DOMAIN:-localhost}"
   local nginx_conf="/etc/nginx/sites-available/netdata"
