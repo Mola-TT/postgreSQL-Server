@@ -8,7 +8,7 @@ alwaysApply: true
 ## Current Progress: Milestone 4
 
 ## Milestone 4
-
+- Create netdata_config.sh under setup folder
 - Install and config netdata show that I can monitor the system resources through only https
 - Send me email alert once one of the cpu usage, disk usage or memory usage is over 80%
 
