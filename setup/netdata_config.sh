@@ -9,12 +9,38 @@ set -e
 
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_DIR="$SCRIPT_DIR/../lib"
+
+# Check if lib directory exists, if not try alternate locations
+if [ ! -d "$LIB_DIR" ]; then
+  # Try some common alternate paths
+  for alt_path in "/home/tom/postgreSQL-Server/lib" "$(dirname "$(dirname "$SCRIPT_DIR")")/lib" "$(dirname "$SCRIPT_DIR")/lib"; do
+    if [ -d "$alt_path" ]; then
+      LIB_DIR="$alt_path"
+      break
+    fi
+  done
+fi
+
+# Debug output
+echo "SCRIPT_DIR: $SCRIPT_DIR"
+echo "LIB_DIR: $LIB_DIR"
 
 # Source the logger functions
-source "$SCRIPT_DIR/../lib/logger.sh"
+if [ -f "$LIB_DIR/logger.sh" ]; then
+  source "$LIB_DIR/logger.sh"
+else
+  echo "ERROR: Logger library not found at $LIB_DIR/logger.sh"
+  exit 1
+fi
 
 # Source utilities
-source "$SCRIPT_DIR/../lib/utilities.sh"
+if [ -f "$LIB_DIR/utilities.sh" ]; then
+  source "$LIB_DIR/utilities.sh"
+else
+  echo "ERROR: Utilities library not found at $LIB_DIR/utilities.sh"
+  exit 1
+fi
 
 # Install Netdata if not already installed
 install_netdata() {

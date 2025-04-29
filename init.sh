@@ -28,7 +28,27 @@ source "$SCRIPT_DIR/setup/postgresql_config.sh"
 source "$SCRIPT_DIR/setup/nginx_config.sh"
 
 # Source Netdata configuration
-source "$SCRIPT_DIR/setup/netdata_config.sh"
+NETDATA_CONFIG="$SCRIPT_DIR/setup/netdata_config.sh"
+if [ -f "$NETDATA_CONFIG" ]; then
+    log_info "Loading Netdata configuration from: $NETDATA_CONFIG"
+    source "$NETDATA_CONFIG"
+else
+    # Try to find the file in alternate locations
+    log_warn "Netdata configuration not found at: $NETDATA_CONFIG"
+    for alt_path in "/home/tom/postgreSQL-Server/setup/netdata_config.sh" "$(dirname "$SCRIPT_DIR")/setup/netdata_config.sh"; do
+        if [ -f "$alt_path" ]; then
+            log_info "Found alternate Netdata configuration at: $alt_path"
+            source "$alt_path"
+            break
+        fi
+    done
+    if [ ! -f "$NETDATA_CONFIG" ] && [ ! -f "$alt_path" ]; then
+        log_error "Could not find Netdata configuration script. Checked:"
+        log_error "  - $NETDATA_CONFIG"
+        log_error "  - /home/tom/postgreSQL-Server/setup/netdata_config.sh"
+        log_error "  - $(dirname "$SCRIPT_DIR")/setup/netdata_config.sh"
+    fi
+fi
 
 # Display init banner
 display_banner() {
