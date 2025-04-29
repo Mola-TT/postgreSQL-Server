@@ -32,10 +32,10 @@ update_system() {
 }
 
 # Set timezone
-set_timezone() {    
+set_timezone() {
     # Use SERVER_TIMEZONE if defined, otherwise fallback to UTC
     local timezone="${SERVER_TIMEZONE:-UTC}"
-    
+        
     execute_silently "timedatectl set-timezone \"$timezone\"" \
         "Timezone set to $timezone" \
         "Failed to set timezone to $timezone" || return 1
