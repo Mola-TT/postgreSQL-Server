@@ -344,14 +344,43 @@ EOC
 setup_netdata() {
   log_info "Setting up Netdata system monitoring..."
   
+  # Check if Netdata is already running properly
+  if systemctl is-active --quiet netdata; then
+    log_info "Netdata service is already running, proceeding with configuration"
+  else
+    log_info "Netdata service not running, installing and configuring"
+  fi
+  
   # Install Netdata
-  install_netdata
+  install_netdata || {
+    log_error "Failed to install Netdata, cannot continue with setup"
+    return 1
+  }
   
   # Configure Netdata
-  configure_netdata
+  configure_netdata || {
+    log_error "Failed to configure Netdata"
+    return 1
+  }
   
   # Configure Nginx as proxy for Netdata
-  configure_nginx_for_netdata
+  if command -v nginx >/dev/null 2>&1; then
+    configure_nginx_for_netdata || {
+      log_warn "Failed to configure Nginx as proxy for Netdata, but Netdata is still usable directly"
+    }
+  else
+    log_warn "Nginx not found, skipping Nginx configuration for Netdata"
+  }
+  
+  # Verify Netdata is running after setup
+  if ! systemctl is-active --quiet netdata; then
+    log_error "Netdata service is not running after setup"
+    log_info "Attempting to start Netdata service..."
+    systemctl start netdata > /dev/null 2>&1 || {
+      log_error "Failed to start Netdata service"
+      return 1
+    }
+  fi
   
   log_info "Netdata setup completed successfully"
   log_info "Monitor your system at https://monitor.${NGINX_DOMAIN:-localhost}"

@@ -109,13 +109,22 @@ main() {
     update_system
     
     # Setup PostgreSQL and pgbouncer
-    setup_postgresql
+    log_info "Setting up PostgreSQL and pgbouncer..."
+    if ! setup_postgresql; then
+        log_error "PostgreSQL setup encountered issues, but continuing with other setup steps"
+    fi
     
     # Setup Nginx for subdomain mapping
-    setup_nginx
+    log_info "Setting up Nginx for subdomain mapping..."
+    if ! setup_nginx; then
+        log_error "Nginx setup encountered issues, but continuing with other setup steps"
+    fi
     
     # Setup Netdata monitoring
-    setup_netdata
+    log_info "Setting up Netdata monitoring..."
+    if ! setup_netdata; then
+        log_error "Netdata setup encountered issues"
+    fi
     
     log_info "Initialization complete"
     

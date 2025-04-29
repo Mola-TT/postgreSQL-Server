@@ -284,30 +284,46 @@ update_pgbouncer_config() {
   log_info "pgbouncer configuration updated successfully"
 }
 
-# Main function to setup Nginx with PostgreSQL configuration
+# Main function to install and configure Nginx
 setup_nginx() {
-  log_info "Setting up Nginx for PostgreSQL subdomain mapping..."
+  log_info "Setting up Nginx for subdomain to database mapping..."
   
-  # Install Nginx
-  install_nginx
-  
-  # Install SSL certificate if domain is specified
-  if [ -n "${NGINX_DOMAIN}" ] && [ "${NGINX_DOMAIN}" != "localhost" ]; then
-    install_ssl_certificate
+  # Check if Nginx is already running properly
+  if systemctl is-active --quiet nginx; then
+    log_info "Nginx service is already running, proceeding with configuration"
   else
-    log_info "No domain specified, skipping SSL certificate installation"
-    # Generate self-signed certificate for localhost
-    generate_self_signed_cert "localhost"
+    log_info "Nginx service not running, installing and configuring"
   fi
   
+  # Install Nginx
+  install_nginx || {
+    log_error "Failed to install Nginx, cannot continue with setup"
+    return 1
+  }
+  
+  # Install SSL certificate
+  install_ssl_certificate || {
+    log_warn "Failed to install SSL certificate, continuing with limited functionality"
+  }
+  
   # Configure Nginx
-  configure_nginx
+  configure_nginx || {
+    log_error "Failed to configure Nginx for subdomain mapping"
+    return 1
+  }
   
   # Configure firewall
   configure_firewall
   
   # Update pgbouncer configuration
   update_pgbouncer_config
+  
+  # Restart Nginx to apply changes
+  log_info "Restarting Nginx to apply changes..."
+  systemctl restart nginx > /dev/null 2>&1 || {
+    log_error "Failed to restart Nginx after configuration"
+    return 1
+  }
   
   log_info "Nginx setup completed successfully"
 }
