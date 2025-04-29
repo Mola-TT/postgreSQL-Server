@@ -2,6 +2,9 @@
 # general_config.sh - General system configuration functions
 # Part of Milestone 1
 
+# Script directory - using unique variable name to avoid conflicts
+GENERAL_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Update system packages silently
 update_system() {
     if [ "$SYSTEM_UPDATE" = true ]; then

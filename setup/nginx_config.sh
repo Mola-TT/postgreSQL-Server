@@ -7,14 +7,14 @@
 # Exit immediately if a command exits with a non-zero status
 set -e
 
-# Script directory
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Script directory - using unique variable name to avoid conflicts
+NGINX_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Source the logger functions
-source "$SCRIPT_DIR/../lib/logger.sh"
+source "$NGINX_SCRIPT_DIR/../lib/logger.sh"
 
 # Source utilities
-source "$SCRIPT_DIR/../lib/utilities.sh"
+source "$NGINX_SCRIPT_DIR/../lib/utilities.sh"
 
 # Install Nginx if not already installed
 install_nginx() {

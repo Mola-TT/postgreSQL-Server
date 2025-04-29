@@ -7,34 +7,34 @@
 # Exit immediately if a command exits with a non-zero status
 set -e
 
-# Script directory
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LIB_DIR="$SCRIPT_DIR/../lib"
+# Script directory - using unique variable name to avoid conflicts
+NETDATA_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NETDATA_LIB_DIR="$NETDATA_SCRIPT_DIR/../lib"
 
 # Check if lib directory exists
-if [ ! -d "$LIB_DIR" ]; then
+if [ ! -d "$NETDATA_LIB_DIR" ]; then
   # Try parent directory
-  LIB_DIR="$(dirname "$SCRIPT_DIR")/lib"
+  NETDATA_LIB_DIR="$(dirname "$NETDATA_SCRIPT_DIR")/lib"
   
-  if [ ! -d "$LIB_DIR" ]; then
+  if [ ! -d "$NETDATA_LIB_DIR" ]; then
     echo "ERROR: Unable to locate lib directory"
     exit 1
   fi
 fi
 
 # Source the logger functions
-if [ -f "$LIB_DIR/logger.sh" ]; then
-  source "$LIB_DIR/logger.sh"
+if [ -f "$NETDATA_LIB_DIR/logger.sh" ]; then
+  source "$NETDATA_LIB_DIR/logger.sh"
 else
-  echo "ERROR: Logger library not found at $LIB_DIR/logger.sh"
+  echo "ERROR: Logger library not found at $NETDATA_LIB_DIR/logger.sh"
   exit 1
 fi
 
 # Source utilities
-if [ -f "$LIB_DIR/utilities.sh" ]; then
-  source "$LIB_DIR/utilities.sh"
+if [ -f "$NETDATA_LIB_DIR/utilities.sh" ]; then
+  source "$NETDATA_LIB_DIR/utilities.sh"
 else
-  echo "ERROR: Utilities library not found at $LIB_DIR/utilities.sh"
+  echo "ERROR: Utilities library not found at $NETDATA_LIB_DIR/utilities.sh"
   exit 1
 fi
 

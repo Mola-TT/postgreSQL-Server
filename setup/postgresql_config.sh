@@ -2,6 +2,9 @@
 # postgresql_config.sh - PostgreSQL installation and configuration
 # Part of Milestone 2
 
+# Script directory - using unique variable name to avoid conflicts
+PG_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Function to install PostgreSQL
 install_postgresql() {
   log_info "Installing PostgreSQL..."
@@ -348,7 +351,7 @@ configure_pgbouncer() {
   log_info "Setting up pgbouncer authentication..."
   
   # Source the extract_hash utility
-  source "$(dirname "${BASH_SOURCE[0]}")/../lib/pg_extract_hash.sh"
+  source "$PG_SCRIPT_DIR/../lib/pg_extract_hash.sh"
   
   # Extract hash for PostgreSQL superuser
   if [ -n "${PG_SUPERUSER_PASSWORD}" ]; then
