@@ -5,7 +5,12 @@ alwaysApply: true
 ---
 # Milestone
 
-## Current Progress: Milestone 3
+## Current Progress: Milestone 4
+
+## Milestone 4
+
+- Install and config netdata show that I can monitor the system resources through only https
+- Send me email alert once one of the cpu usage, disk usage or memory usage is over 80%
 
 ## Milestone 3
 - Created `nginx_config.sh` under setup folder to:
@@ -90,13 +95,4 @@ alwaysApply: true
    - Added system update functionality
    - Added timezone configuration
 
-## Original Objectives
-
-1. Create an `init.sh` script to update the Ubuntu server silently
-2. Create a `logger.sh` script to provide a logging function
-   - Log messages should be white in color by default
-   - Timestamps in logs should be bold
-   - Only log level text and log level should have color formatting
-3. Create a `user.env` file for entering user variables
-4. Create a `default.env` file for default variables
 
