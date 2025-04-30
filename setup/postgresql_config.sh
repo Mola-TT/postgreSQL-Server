@@ -400,11 +400,26 @@ configure_pgbouncer() {
     # Configure SSL for pgbouncer if enabled
     if [ "${PG_ENABLE_SSL:-true}" = "true" ]; then
       echo "# Server-side SSL configuration (pgbouncer to PostgreSQL)"
-      echo "server_tls_sslmode = require"  # Changed to require SSL but without certificate verification
+      echo "server_tls_sslmode = require"  # Require SSL for connections to PostgreSQL
       
-      # Client-side SSL configuration (clients to pgbouncer)
+      # Get PostgreSQL data directory to find SSL certificate files
+      local pg_data_dir
+      pg_data_dir=$(su - postgres -c "psql -t -c \"SHOW data_directory;\"" 2>/dev/null | tr -d ' \n\r\t')
+      
+      if [ -z "$pg_data_dir" ]; then
+        log_warn "Could not determine PostgreSQL data directory, using default path"
+        pg_data_dir="/var/lib/postgresql/*/main"
+      fi
+      
+      # Set the server certificate and key files
+      local ssl_cert="$pg_data_dir/server.crt"
+      local ssl_key="$pg_data_dir/server.key"
+      
+      # Use the same certificate files for client connections
       echo "# Client-side SSL configuration"
-      echo "client_tls_sslmode = require"  # Requiring SSL from clients to pgbouncer as well
+      echo "client_tls_sslmode = require"  # Requiring SSL from clients to pgbouncer 
+      echo "client_tls_cert_file = $ssl_cert"
+      echo "client_tls_key_file = $ssl_key"
     else
       # Explicitly disable SSL if not enabled
       echo "# SSL is disabled"
