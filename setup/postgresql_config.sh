@@ -369,20 +369,14 @@ configure_pgbouncer() {
     echo "[databases]"
     # If database name specified, add it to pgbouncer.ini
     if [ -n "${PG_DATABASE}" ]; then
-      # If SSL is enabled, add SSL options
-      if [ "${PG_ENABLE_SSL:-true}" = "true" ]; then
-        echo "${PG_DATABASE} = host=127.0.0.1 port=5432 dbname=${PG_DATABASE} sslmode=require"
-      else
-        echo "${PG_DATABASE} = host=127.0.0.1 port=5432 dbname=${PG_DATABASE}"
-      fi
+      # If SSL is enabled, we need to handle connection differently
+      # Note: pgbouncer doesn't support sslmode in the [databases] section
+      echo "${PG_DATABASE} = host=127.0.0.1 port=5432 dbname=${PG_DATABASE}"
     fi
     
-    # Configure wildcard database with SSL if enabled
-    if [ "${PG_ENABLE_SSL:-true}" = "true" ]; then
-      echo "* = host=127.0.0.1 port=5432 sslmode=require"
-    else
-      echo "* = host=127.0.0.1 port=5432"
-    fi
+    # Configure wildcard database
+    # Note: pgbouncer doesn't support sslmode in the [databases] section
+    echo "* = host=127.0.0.1 port=5432"
     
     echo ""
     echo "[pgbouncer]"
@@ -403,11 +397,15 @@ configure_pgbouncer() {
     echo "default_pool_size = ${PGB_DEFAULT_POOL_SIZE:-20}"
     echo "ignore_startup_parameters = ${PGB_IGNORE_PARAMS:-extra_float_digits}"
     
-    # Configure client-side SSL for pgbouncer
+    # Configure SSL for pgbouncer if enabled
     if [ "${PG_ENABLE_SSL:-true}" = "true" ]; then
-      echo "server_tls_sslmode = require"
+      echo "# Server-side SSL configuration (pgbouncer to PostgreSQL)"
+      echo "server_tls_sslmode = verify-ca"
       echo "server_tls_ca_file = /etc/ssl/certs/ca-certificates.crt"
-      echo "client_tls_sslmode = disable"
+      
+      # Client-side SSL configuration (clients to pgbouncer)
+      echo "# Client-side SSL configuration"
+      echo "client_tls_sslmode = disable"  # Disabled by default for compatibility
     fi
     
     echo ""
