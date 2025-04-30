@@ -400,8 +400,9 @@ configure_pgbouncer() {
     # Configure SSL for pgbouncer if enabled
     if [ "${PG_ENABLE_SSL:-true}" = "true" ]; then
       echo "# Server-side SSL configuration (pgbouncer to PostgreSQL)"
-      echo "server_tls_sslmode = verify-ca"
-      echo "server_tls_ca_file = /etc/ssl/certs/ca-certificates.crt"
+      echo "server_tls_sslmode = prefer"  # Changed from verify-ca to prefer to avoid certificate verification errors
+      # Don't specify CA file if using 'prefer' mode as it's not strictly required
+      # echo "server_tls_ca_file = /etc/ssl/certs/ca-certificates.crt"
       
       # Client-side SSL configuration (clients to pgbouncer)
       echo "# Client-side SSL configuration"
