@@ -352,34 +352,34 @@ setup_netdata() {
   fi
   
   # Install Netdata
-  install_netdata || {
+  if ! install_netdata; then
     log_error "Failed to install Netdata, cannot continue with setup"
     return 1
-  }
+  fi
   
   # Configure Netdata
-  configure_netdata || {
+  if ! configure_netdata; then
     log_error "Failed to configure Netdata"
     return 1
-  }
+  fi
   
   # Configure Nginx as proxy for Netdata
   if command -v nginx >/dev/null 2>&1; then
-    configure_nginx_for_netdata || {
+    if ! configure_nginx_for_netdata; then
       log_warn "Failed to configure Nginx as proxy for Netdata, but Netdata is still usable directly"
-    }
+    fi
   else
     log_warn "Nginx not found, skipping Nginx configuration for Netdata"
-  }
+  fi
   
   # Verify Netdata is running after setup
   if ! systemctl is-active --quiet netdata; then
     log_error "Netdata service is not running after setup"
     log_info "Attempting to start Netdata service..."
-    systemctl start netdata > /dev/null 2>&1 || {
+    if ! systemctl start netdata > /dev/null 2>&1; then
       log_error "Failed to start Netdata service"
       return 1
-    }
+    fi
   fi
   
   log_info "Netdata setup completed successfully"
