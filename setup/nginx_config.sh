@@ -84,21 +84,83 @@ install_ssl_certificate() {
       # Secure the credentials file
       chmod 600 "$cloudflare_credentials"
       log_info "Cloudflare credentials file created at $cloudflare_credentials"
+      
+      # Validate the Cloudflare API token has proper permissions (requires dns_cloudflare and curl)
+      log_info "Validating Cloudflare API token permissions..."
+      
+      # Install needed tools if missing
+      if ! command -v curl >/dev/null 2>&1; then
+        apt-get install -y -qq curl > /dev/null 2>&1
+      fi
+      
+      # Test the API token using Cloudflare's API
+      local token_check=$(curl -s -X GET "https://api.cloudflare.com/client/v4/user/tokens/verify" \
+                         -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                         -H "Content-Type: application/json")
+      
+      # Check if token is valid and has proper permissions
+      if echo "$token_check" | grep -q "\"success\":true"; then
+        log_info "Cloudflare API token is valid"
+        
+        # Check if domain is in Cloudflare
+        local zone_check=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=$domain" \
+                          -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                          -H "Content-Type: application/json")
+        
+        if echo "$zone_check" | grep -q "\"success\":true" && ! echo "$zone_check" | grep -q "\"count\":0"; then
+          log_info "Domain $domain found in your Cloudflare account"
+          
+          # Request certificate with Cloudflare DNS plugin for both domain and wildcard
+          log_info "Requesting Let's Encrypt certificate using Cloudflare DNS validation..."
+          
+          # Run certbot with output to temporary file to capture errors
+          local certbot_output="/tmp/certbot_output.$$"
+          if ! certbot certonly --dns-cloudflare --dns-cloudflare-credentials "$cloudflare_credentials" \
+             -d "$domain" -d "*.$domain" --non-interactive --agree-tos --email "${SSL_EMAIL:-admin@$domain}" > "$certbot_output" 2>&1; then
+            
+            # Output the error for debugging
+            log_warn "Failed to obtain Let's Encrypt certificate using Cloudflare DNS validation:"
+            cat "$certbot_output" | while read -r line; do
+              log_warn "  $line"
+            done
+            
+            # Check for common errors
+            if grep -q "DNS problem" "$certbot_output"; then
+              log_warn "There appears to be a DNS validation issue. Make sure your Cloudflare API token has permission to modify DNS records."
+            elif grep -q "Rate limit" "$certbot_output"; then
+              log_warn "Let's Encrypt rate limit reached. You may need to wait before trying again."
+            elif grep -q "invalid email" "$certbot_output"; then
+              log_warn "Invalid email address provided: ${SSL_EMAIL:-admin@$domain}"
+            fi
+            
+            # Clean up
+            rm -f "$certbot_output"
+            
+            # Fall back to self-signed certificate
+            log_info "Using self-signed certificate instead"
+            generate_self_signed_cert "$domain"
+          else
+            # Clean up
+            rm -f "$certbot_output"
+            log_info "SSL certificate for $domain and *.$domain installed successfully using Cloudflare DNS validation"
+          fi
+        else
+          log_warn "Domain $domain not found in your Cloudflare account or API token doesn't have zone permissions"
+          log_warn "Using self-signed certificate instead"
+          generate_self_signed_cert "$domain"
+          return 0
+        fi
+      else
+        log_error "Cloudflare API token is invalid or doesn't have required permissions"
+        log_warn "Using self-signed certificate instead"
+        generate_self_signed_cert "$domain"
+        return 0
+      fi
     else
       log_error "CLOUDFLARE_API_TOKEN is not set, cannot perform DNS validation"
       log_warn "Using self-signed certificate instead"
       generate_self_signed_cert "$domain"
       return 0
-    fi
-    
-    # Request certificate with Cloudflare DNS plugin for both domain and wildcard
-    log_info "Requesting Let's Encrypt certificate using Cloudflare DNS validation..."
-    if ! certbot certonly --dns-cloudflare --dns-cloudflare-credentials "$cloudflare_credentials" \
-       -d "$domain" -d "*.$domain" --non-interactive --agree-tos --email "${SSL_EMAIL:-admin@$domain}" > /dev/null 2>&1; then
-      log_warn "Failed to obtain Let's Encrypt certificate using Cloudflare DNS validation, using self-signed certificate instead"
-      generate_self_signed_cert "$domain"
-    else
-      log_info "SSL certificate for $domain and *.$domain installed successfully using Cloudflare DNS validation"
     fi
   else
     # Standard HTTP validation - Note: This will not work for wildcard domains
