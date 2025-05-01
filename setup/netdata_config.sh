@@ -314,6 +314,11 @@ EOC
   # Create htpasswd file
   htpasswd -bc "$htpasswd_file" "$admin_user" "$admin_pass" > /dev/null 2>&1
   
+  # Save credentials to a file for easy retrieval during testing
+  echo "NETDATA_ADMIN_USER=$admin_user" > /etc/netdata/netdata_credentials.txt
+  echo "NETDATA_ADMIN_PASSWORD=$admin_pass" >> /etc/netdata/netdata_credentials.txt
+  chmod 600 /etc/netdata/netdata_credentials.txt
+  
   log_info "Created basic auth credentials for Netdata (User: $admin_user)"
   log_info "Password for Netdata access: $admin_pass"
   

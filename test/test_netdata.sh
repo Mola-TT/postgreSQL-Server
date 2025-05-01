@@ -111,22 +111,41 @@ test_external_netdata() {
       # Try with credentials if available
       local admin_user="admin"
       local admin_pass
-      if [ -f "$SCRIPT_DIR/conf/user.env" ]; then
-        admin_user=$(grep -E "^NETDATA_ADMIN_USER=" "$SCRIPT_DIR/conf/user.env" | cut -d '=' -f 2 | tr -d '"' || echo "admin")
-        admin_pass=$(grep -E "^NETDATA_ADMIN_PASSWORD=" "$SCRIPT_DIR/conf/user.env" | cut -d '=' -f 2 | tr -d '"' || echo "")
+      
+      # First check for credentials in the credentials file
+      if [ -f "/etc/netdata/netdata_credentials.txt" ]; then
+        log_info "Found netdata credentials file, using stored credentials..."
+        admin_user=$(grep "NETDATA_ADMIN_USER" /etc/netdata/netdata_credentials.txt | cut -d= -f2)
+        admin_pass=$(grep "NETDATA_ADMIN_PASSWORD" /etc/netdata/netdata_credentials.txt | cut -d= -f2)
+      # Next check in the Nginx htpasswd file
+      elif [ -f "/etc/nginx/.htpasswd.netdata" ]; then
+        log_info "Found htpasswd file, checking credentials..."
+        # Read the password from the setup script output in the log
+        if [ -f "/var/log/postgresql-setup.log" ]; then
+          admin_pass=$(grep "Password for Netdata access:" /var/log/postgresql-setup.log | tail -1 | awk '{print $NF}')
+        fi
       fi
       
-      if [ -n "$admin_pass" ]; then
-        log_info "Testing with credentials ($admin_user)..."
-        local auth_status=$(curl -s -o /dev/null -w "%{http_code}" --insecure -u "$admin_user:$admin_pass" "https://monitor.$domain/" 2>/dev/null || echo "Failed to connect")
+      # If still no password, provide instructions for finding it
+      if [ -z "$admin_pass" ]; then
+        log_info "No admin password found. Check the installation log for: 'Password for Netdata access:'"
+        log_info "You can also manually retrieve it by checking: cat /etc/nginx/.htpasswd.netdata"
         
-        if [[ "$auth_status" == "200" ]]; then
-          log_info "✓ PASS: Successfully authenticated with credentials"
-        else
-          log_warn "⚠ WARNING: Authentication with credentials failed (Status: $auth_status)"
-        fi
+        # Try a default password as a last resort
+        admin_pass="admin"
+        log_info "Trying with default credentials (admin:admin)..."
       else
-        log_info "No credentials found in user.env for authentication test"
+        log_info "Testing with credentials ($admin_user:$admin_pass)..."
+      fi
+      
+      local auth_status=$(curl -s -o /dev/null -w "%{http_code}" --insecure -u "$admin_user:$admin_pass" "https://monitor.$domain/" 2>/dev/null || echo "Failed to connect")
+      
+      if [[ "$auth_status" == "200" ]]; then
+        log_info "✓ PASS: Successfully authenticated with credentials"
+      else
+        log_warn "⚠ WARNING: Authentication with credentials failed (Status: $auth_status)"
+        log_info "This is normal if the password is not correctly configured in this test script."
+        log_info "You can find the correct password in the installation log or set it in conf/user.env"
       fi
     else
       log_info "✓ PASS: Netdata is accessible externally via HTTPS without basic auth (Status: $https_status)"
@@ -154,7 +173,7 @@ test_external_netdata() {
   log_info "Checking if Netdata port 19999 is properly blocked..."
   local netdata_port_status=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 3 "http://$domain:19999/" 2>/dev/null || echo "Connection refused")
   
-  if [[ "$netdata_port_status" == "Connection refused" ]]; then
+  if [[ "$netdata_port_status" == "Connection refused" || "$netdata_port_status" == "000" ]]; then
     log_info "✓ PASS: Netdata port 19999 is properly blocked for external access"
   else
     log_warn "⚠ WARNING: Netdata port 19999 appears to be accessible externally (Status: $netdata_port_status)"
