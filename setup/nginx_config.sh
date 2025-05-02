@@ -82,27 +82,13 @@ install_ssl_certificate() {
     
     # Create Cloudflare credentials directory and file if needed
     local cloudflare_credentials="/etc/letsencrypt/cloudflare/credentials.ini"
-    local cloudflare_token_env="/etc/letsencrypt/cloudflare/token.env"
     mkdir -p "$(dirname "$cloudflare_credentials")" 2>/dev/null
     
-    # Check for token in environment file
-    local api_token="${CLOUDFLARE_API_TOKEN}"
-    
-    # Try to source token from external file if it exists
-    if [ -f "$cloudflare_token_env" ]; then
-      log_info "Found external Cloudflare token file, loading token..."
-      source "$cloudflare_token_env"
-      if [ -n "$CLOUDFLARE_API_TOKEN" ]; then
-        api_token="$CLOUDFLARE_API_TOKEN"
-        log_info "Loaded Cloudflare API token from external file"
-      fi
-    fi
-    
     # Create or update Cloudflare credentials file
-    if [ -n "$api_token" ]; then
+    if [ -n "${CLOUDFLARE_API_TOKEN}" ]; then
       {
         echo "# Cloudflare API token for DNS validation"
-        echo "dns_cloudflare_api_token = ${api_token}"
+        echo "dns_cloudflare_api_token = ${CLOUDFLARE_API_TOKEN}"
       } > "$cloudflare_credentials"
       # Secure the credentials file
       chmod 600 "$cloudflare_credentials"
@@ -118,7 +104,7 @@ install_ssl_certificate() {
       
       # Test the API token using Cloudflare's API
       local token_check=$(curl -s -X GET "https://api.cloudflare.com/client/v4/user/tokens/verify" \
-                         -H "Authorization: Bearer ${api_token}" \
+                         -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
                          -H "Content-Type: application/json")
       
       # Check if token is valid and has proper permissions
@@ -127,7 +113,7 @@ install_ssl_certificate() {
         
         # Check if domain is in Cloudflare
         local zone_check=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=$domain" \
-                          -H "Authorization: Bearer ${api_token}" \
+                          -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
                           -H "Content-Type: application/json")
         
         if echo "$zone_check" | grep -q "\"success\":true" && ! echo "$zone_check" | grep -q "\"count\":0"; then
@@ -150,10 +136,8 @@ install_ssl_certificate() {
             # Check for common errors
             if grep -q "DNS problem" "$certbot_output"; then
               log_warn "There appears to be a DNS validation issue. Make sure your Cloudflare API token has permission to modify DNS records."
-              log_warn "Required permissions: Zone.Zone:Read and Zone.DNS:Edit"
             elif grep -q "Rate limit" "$certbot_output"; then
               log_warn "Let's Encrypt rate limit reached. You may need to wait before trying again."
-              log_warn "Try setting PRODUCTION=false to use the staging environment with higher limits."
             elif grep -q "invalid email" "$certbot_output"; then
               log_warn "Invalid email address provided: ${SSL_EMAIL:-admin@$domain}"
             fi
@@ -177,25 +161,12 @@ install_ssl_certificate() {
         fi
       else
         log_error "Cloudflare API token is invalid or doesn't have required permissions"
-        
-        # Show detailed error message if available
-        if [[ "$token_check" == *"\"message\""* ]]; then
-          local error_message=$(echo "$token_check" | grep -o '"message":"[^"]*"' | cut -d':' -f2- | tr -d '"')
-          log_error "Error message: $error_message"
-        fi
-        
-        log_warn "To fix this issue:"
-        log_warn "1. Create a new API token at https://dash.cloudflare.com/profile/api-tokens"
-        log_warn "2. Use the 'Edit zone DNS' template or add Zone.Zone:Read and Zone.DNS:Edit permissions"
-        log_warn "3. Add the token using: echo 'export CLOUDFLARE_API_TOKEN=\"your-token\"' > /etc/letsencrypt/cloudflare/token.env"
         log_warn "Using self-signed certificate instead"
         generate_self_signed_cert "$domain"
         return 0
       fi
     else
-      log_error "CLOUDFLARE_API_TOKEN is not set"
-      log_warn "To fix this issue, create a token with appropriate permissions and add it:"
-      log_warn "echo 'export CLOUDFLARE_API_TOKEN=\"your-token-here\"' > /etc/letsencrypt/cloudflare/token.env"
+      log_error "CLOUDFLARE_API_TOKEN is not set, cannot perform DNS validation"
       log_warn "Using self-signed certificate instead"
       generate_self_signed_cert "$domain"
       return 0
