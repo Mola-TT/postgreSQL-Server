@@ -173,7 +173,7 @@ test_external_netdata() {
   log_info "Checking if Netdata port 19999 is properly blocked..."
   local netdata_port_status=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 3 "http://$domain:19999/" 2>/dev/null || echo "Connection refused")
   
-  if [[ "$netdata_port_status" == "Connection refused" || "$netdata_port_status" == "000" ]]; then
+  if [[ "$netdata_port_status" == "Connection refused" || "$netdata_port_status" == "000" || "$netdata_port_status" == "000Connection refused" ]]; then
     log_info "✓ PASS: Netdata port 19999 is properly blocked for external access"
   else
     log_warn "⚠ WARNING: Netdata port 19999 appears to be accessible externally (Status: $netdata_port_status)"
