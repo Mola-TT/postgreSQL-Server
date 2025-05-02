@@ -46,6 +46,15 @@ install_nginx() {
 # Install SSL certificate using Let's Encrypt if enabled
 install_ssl_certificate() {
   local domain="${NGINX_DOMAIN:-localhost}"
+  local staging_arg=""
+  
+  # Check if we should use Let's Encrypt staging environment
+  if [ "${PRODUCTION:-false}" != "true" ]; then
+    log_info "Using Let's Encrypt staging environment (PRODUCTION=false)"
+    staging_arg="--test-cert"
+  else
+    log_info "Using Let's Encrypt production environment"
+  fi
   
   if [ "$domain" = "localhost" ]; then
     log_info "Using localhost for domain, skipping Let's Encrypt certificate"
@@ -115,7 +124,7 @@ install_ssl_certificate() {
           
           # Run certbot with output to temporary file to capture errors
           local certbot_output="/tmp/certbot_output.$$"
-          if ! certbot certonly --dns-cloudflare --dns-cloudflare-credentials "$cloudflare_credentials" \
+          if ! certbot certonly $staging_arg --dns-cloudflare --dns-cloudflare-credentials "$cloudflare_credentials" \
              -d "$domain" -d "*.$domain" --non-interactive --agree-tos --email "${SSL_EMAIL:-admin@$domain}" > "$certbot_output" 2>&1; then
             
             # Output the error for debugging
@@ -165,7 +174,7 @@ install_ssl_certificate() {
   else
     # Standard HTTP validation - Note: This will not work for wildcard domains
     log_info "Requesting Let's Encrypt certificate using HTTP validation..."
-    if ! certbot --nginx -d "$domain" --non-interactive --agree-tos --email "${SSL_EMAIL:-admin@$domain}" > /dev/null 2>&1; then
+    if ! certbot --nginx $staging_arg -d "$domain" --non-interactive --agree-tos --email "${SSL_EMAIL:-admin@$domain}" > /dev/null 2>&1; then
       log_warn "Failed to obtain Let's Encrypt certificate, using self-signed certificate instead"
       generate_self_signed_cert "$domain"
     else
