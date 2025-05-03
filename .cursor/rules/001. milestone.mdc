@@ -5,12 +5,34 @@ alwaysApply: true
 ---
 # Milestone
 
-## Current Progress: Milestone 4
+## Current Progress: Milestone 4 (Completed)
 
 ## Milestone 4
-- Create netdata_config.sh under setup folder
-- Install and config netdata show that I can monitor the system resources through only https
-- Send me email alert once one of the cpu usage, disk usage or memory usage is over 80%
+- Created `netdata_config.sh` under setup folder that:
+  - Installs Netdata for system resource monitoring
+  - Configures Netdata to listen only on localhost for security
+  - Sets up Nginx as a secure HTTPS proxy for Netdata dashboard access
+  - Implements basic authentication for Netdata web interface
+  - Configures SSL using Let's Encrypt certificates with proper staging/production environment support
+  - Creates health alert notifications for CPU, RAM, and disk usage thresholds at 80%
+  - Configures email alerts when system resources exceed thresholds
+  - Configures firewall rules to block direct access to Netdata port (19999)
+- Created comprehensive test script (`test_netdata.sh`) to validate:
+  - Internal Netdata accessibility on localhost
+  - External Netdata accessibility via HTTPS proxy
+  - Authentication with proper credentials
+  - HTTP to HTTPS redirection
+  - Firewall configuration blocking direct access
+- Enhanced environment configuration:
+  - Added Netdata-specific settings to environment files
+  - Added email notification configuration options
+  - Added PRODUCTION flag to control Let's Encrypt staging vs production environments
+  - Added secure credential storage mechanisms
+- Improved error handling and logging:
+  - Implemented detailed error reporting for certificate acquisition failures
+  - Added proper service status verification
+  - Fixed configuration bugs related to WebSocket support
+  - Added troubleshooting guidance in log messages
 
 ## Milestone 3
 - Created `nginx_config.sh` under setup folder to:
