@@ -8,26 +8,26 @@ alwaysApply: true
 ## Current Progress: Milestone 5 (In Progress)
 
 ## Milestone 5
-- Create `ssl_renewal.sh` under setup folder that:
-  - Sets up automatic renewal of Let's Encrypt SSL certificates
-  - Configures proper renewal hooks to restart/reload necessary services after renewal
-  - Implements fallback mechanisms for when renewal might fail
-  - Creates detailed logging for renewal processes
-  - Ensures proper file permissions for certificate files
-  - Includes graceful error handling with clear error messages
-  - Configures different certificate renewal approaches based on validation method (HTTP vs DNS)
-- Create comprehensive test script (`test_ssl_renewal.sh`) to validate:
+- Created `ssl_renewal.sh` under setup folder that:
+  - Set up automatic renewal of Let's Encrypt SSL certificates
+  - Configured proper renewal hooks to restart/reload necessary services after renewal
+  - Implemented fallback mechanisms for when renewal might fail
+  - Created detailed logging for renewal processes
+  - Ensured proper file permissions for certificate files
+  - Included graceful error handling with clear error messages
+  - Configured different certificate renewal approaches based on validation method (HTTP vs DNS)
+- Created comprehensive test script (`test_ssl_renewal.sh`) to validate:
   - Proper certificate renewal configuration (without actually performing renewal)
   - Renewal hooks functionality
   - Proper permissions on SSL certificate files
   - Simulated renewal process with dry-run
   - Log file creation and error reporting
-- Update init.sh to include SSL renewal configuration in the initialization process
+- Updated init.sh to include SSL renewal configuration in the initialization process
 - Enhanced error handling and logging:
-  - Implement detailed error reporting for renewal failures
-  - Add verification steps for renewal configuration
-  - Create troubleshooting guidance in log messages
-  - Add validation checks to prevent common renewal issues
+  - Implemented detailed error reporting for renewal failures
+  - Added verification steps for renewal configuration
+  - Created troubleshooting guidance in log messages
+  - Added validation checks to prevent common renewal issues
 
 ## Milestone 4
 - Created `netdata_config.sh` under setup folder that:
@@ -110,33 +110,28 @@ alwaysApply: true
   - Added backward compatibility for legacy variable references
 
 ## Milestone 1
-
-1. Created an `init.sh` script that:
-   - Updates the Ubuntu server silently
-   - Sets up timezone directly from configuration
-   - Checks if running as root
-   - Loads environment variables
-   - Provides proper initialization flow
-
-2. Created a `logger.sh` script with logging functions:
-   - Implemented color-coded log levels (DEBUG, INFO, WARNING, ERROR)
-   - Made log message timestamps bold
-   - Made log messages white by default
-   - Applied colors only to log level text
-   - Added file logging capability
-
-3. Created environment configuration:
-   - Added `default.env` with default configuration
-   - Added `user.env.template` for user-specific settings
-   - Implemented environment variable override logic
-
-4. Added utility functions:
-   - Created `utilities.sh` with helper functions
-   - Implemented `execute_silently` for quiet command execution
-   - Added log file management
-
-5. Created general configuration:
-   - Added system update functionality
-   - Added timezone configuration
+- Created an `init.sh` script that:
+  - Updates the Ubuntu server silently
+  - Sets up timezone directly from configuration
+  - Checks if running as root
+  - Loads environment variables
+  - Provides proper initialization flow
+- Created a `logger.sh` script with logging functions:
+  - Implemented color-coded log levels (DEBUG, INFO, WARNING, ERROR)
+  - Made log message timestamps bold
+  - Made log messages white by default
+  - Applied colors only to log level text
+  - Added file logging capability
+- Created environment configuration:
+  - Added `default.env` with default configuration
+  - Added `user.env.template` for user-specific settings
+  - Implemented environment variable override logic
+- Added utility functions:
+  - Created `utilities.sh` with helper functions
+  - Implemented `execute_silently` for quiet command execution
+  - Added log file management
+- Created general configuration:
+  - Added system update functionality
+  - Added timezone configuration
 
 
