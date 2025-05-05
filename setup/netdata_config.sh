@@ -109,7 +109,7 @@ install_netdata() {
       rm -f "$install_log" /tmp/netdata_kickstart.sh
       return 1
     fi
-  }
+  fi
 }
 
 # Configure Netdata to use HTTPS only and set up email alerts
