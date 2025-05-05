@@ -79,8 +79,8 @@ collect_logs() {
   log_info "Collecting system logs..."
   mkdir -p "$OUTPUT_DIR/system/logs"
   
-  # Copy key system logs
-  for log in /var/log/syslog /var/log/messages /var/log/dmesg /var/log/kern.log; do
+  # Copy key system logs - excluding dmesg and kern.log as requested
+  for log in /var/log/syslog /var/log/messages; do
     if [ -f "$log" ]; then
       tail -n 1000 "$log" > "$OUTPUT_DIR/system/logs/$(basename $log)" 2>/dev/null || \
         log_warn "Failed to collect $log"
@@ -357,6 +357,10 @@ create_consolidated_log() {
     echo ""
     echo "Files collected:"
     find "$OUTPUT_DIR" -type f | sort | sed "s|$OUTPUT_DIR/||" | sed 's/^/  - /'
+    echo ""
+    echo "Files specifically excluded:"
+    echo "  - system/logs/dmesg (excluded as requested)"
+    echo "  - system/logs/kern.log (excluded as requested)"
     echo ""
     echo "======================================================"
   } >> "$CONSOLIDATED_LOG"
