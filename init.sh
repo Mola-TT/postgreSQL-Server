@@ -1,6 +1,6 @@
 #!/bin/bash
 # init.sh - PostgreSQL server initialization script
-# Part of Milestone 1, 2, 3 & 4
+# Part of Milestone 1, 2, 3, 4 & 5
 # This script updates the Ubuntu server silently and sets up initial environment
 
 # Exit immediately if a command exits with a non-zero status
@@ -29,6 +29,9 @@ source "$SCRIPT_DIR/setup/nginx_config.sh"
 
 # Source Netdata configuration
 source "$SCRIPT_DIR/setup/netdata_config.sh"
+
+# Source SSL Renewal configuration
+source "$SCRIPT_DIR/setup/ssl_renewal.sh"
 
 
 # Display init banner
@@ -124,6 +127,12 @@ main() {
     log_info "Setting up Netdata monitoring..."
     if ! setup_netdata; then
         log_error "Netdata setup encountered issues"
+    fi
+    
+    # Setup SSL certificate auto-renewal
+    log_info "Setting up SSL certificate auto-renewal..."
+    if ! setup_ssl_renewal; then
+        log_error "SSL certificate auto-renewal setup encountered issues"
     fi
     
     log_info "Initialization complete"
