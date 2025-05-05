@@ -37,9 +37,13 @@ remove_comments() {
   
   # Different comment patterns for different file types
   case "$(basename "$input_file")" in
-    *.conf|*.ini|postgresql.conf|pg_hba.conf|*.cnf)
+    *.conf|*.ini|postgresql.conf|pg_hba.conf|pg_ident.conf|*.cnf|userlist.txt|*.yaml|*.yml)
       # Remove comments and empty lines for config files
-      grep -v "^[[:space:]]*#" "$input_file" | grep -v "^[[:space:]]*;" | grep -v "^[[:space:]]*$" > "$output_file"
+      grep -v "^[[:space:]]*#" "$input_file" | grep -v "^[[:space:]]*;" | grep -v "^[[:space:]]*--" | grep -v "^[[:space:]]*$" > "$output_file"
+      ;;
+    *.sh|*.bash)
+      # Remove bash-style comments from shell scripts
+      grep -v "^[[:space:]]*#" "$input_file" | grep -v "^[[:space:]]*$" > "$output_file"
       ;;
     *)
       # For other files, just copy as is
