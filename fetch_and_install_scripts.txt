@@ -4,7 +4,7 @@ cd postgreSQL-Server
 nano conf/user.env
 
 chmod +x init.sh
-chmod +x ./tools/collect_logs.sh
+chmod +x ./tools/collect_log.sh
 clear
 sudo ./init.sh
 
