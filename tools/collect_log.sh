@@ -30,6 +30,24 @@ CONSOLIDATED_LOG="/tmp/postgres_server_logs_${TIMESTAMP}.txt"
 # Create the output directory
 mkdir -p "$OUTPUT_DIR"
 
+# Function to remove comments from a file
+remove_comments() {
+  local input_file="$1"
+  local output_file="$2"
+  
+  # Different comment patterns for different file types
+  case "$(basename "$input_file")" in
+    *.conf|*.ini|postgresql.conf|pg_hba.conf|*.cnf)
+      # Remove comments and empty lines for config files
+      grep -v "^[[:space:]]*#" "$input_file" | grep -v "^[[:space:]]*;" | grep -v "^[[:space:]]*$" > "$output_file"
+      ;;
+    *)
+      # For other files, just copy as is
+      cat "$input_file" > "$output_file"
+      ;;
+  esac
+}
+
 # Log collection function
 collect_logs() {
   log_info "Starting log collection process..."
@@ -47,7 +65,7 @@ collect_logs() {
     echo "Hostname: $(hostname)"
     echo "Kernel: $(uname -a)"
     if [ -f /etc/os-release ]; then
-      cat /etc/os-release
+      grep -v "^#" /etc/os-release | grep -v "^$"
     fi
     echo -e "\n=== Disk Usage ==="
     df -h
@@ -114,11 +132,15 @@ collect_logs() {
     log_warn "psql command not found"
   fi
   
-  # PostgreSQL configuration
+  # PostgreSQL configuration - without comments
   PG_CONF_DIR="/etc/postgresql"
   if [ -d "$PG_CONF_DIR" ]; then
-    find "$PG_CONF_DIR" -name "*.conf" -type f -exec cp {} "$OUTPUT_DIR/postgresql/config/" \; 2>/dev/null || \
-      log_warn "Failed to collect some PostgreSQL config files"
+    # Find all .conf files
+    find "$PG_CONF_DIR" -name "*.conf" -type f | while read -r conf_file; do
+      conf_basename=$(basename "$conf_file")
+      # Save config without comments
+      remove_comments "$conf_file" "$OUTPUT_DIR/postgresql/config/$conf_basename"
+    done
   else
     log_warn "PostgreSQL config directory not found at $PG_CONF_DIR"
   fi
@@ -142,17 +164,17 @@ collect_logs() {
   systemctl status pgbouncer > "$OUTPUT_DIR/pgbouncer/pgbouncer_status.txt" 2>&1 || \
     log_warn "Failed to collect pgbouncer service status"
   
-  # pgbouncer configuration
+  # pgbouncer configuration - without comments
   if [ -f "/etc/pgbouncer/pgbouncer.ini" ]; then
-    cp "/etc/pgbouncer/pgbouncer.ini" "$OUTPUT_DIR/pgbouncer/config/" 2>/dev/null || \
-      log_warn "Failed to collect pgbouncer.ini"
+    # Save config without comments
+    remove_comments "/etc/pgbouncer/pgbouncer.ini" "$OUTPUT_DIR/pgbouncer/config/pgbouncer.ini"
   else
     log_warn "pgbouncer.ini not found"
   fi
   
   if [ -f "/etc/pgbouncer/userlist.txt" ]; then
     # Copy redacted version to avoid leaking passwords
-    grep -v "^\"" "/etc/pgbouncer/userlist.txt" > "$OUTPUT_DIR/pgbouncer/config/userlist.txt.redacted" 2>/dev/null || \
+    grep -v "^\"" "/etc/pgbouncer/userlist.txt" | grep -v "^#" | grep -v "^$" > "$OUTPUT_DIR/pgbouncer/config/userlist.txt.redacted" 2>/dev/null || \
       log_warn "Failed to collect redacted userlist.txt"
   fi
   
@@ -165,20 +187,34 @@ collect_logs() {
   systemctl status nginx > "$OUTPUT_DIR/nginx/nginx_status.txt" 2>&1 || \
     log_warn "Failed to collect Nginx service status"
   
-  # Nginx configuration
+  # Nginx configuration - without comments
   if [ -d "/etc/nginx" ]; then
-    cp "/etc/nginx/nginx.conf" "$OUTPUT_DIR/nginx/config/" 2>/dev/null || \
-      log_warn "Failed to collect nginx.conf"
+    # Main config without comments
+    if [ -f "/etc/nginx/nginx.conf" ]; then
+      remove_comments "/etc/nginx/nginx.conf" "$OUTPUT_DIR/nginx/config/nginx.conf"
+    else
+      log_warn "nginx.conf not found"
+    fi
     
-    # Sites available/enabled
+    # Sites available/enabled without comments
     mkdir -p "$OUTPUT_DIR/nginx/config/sites-available"
     mkdir -p "$OUTPUT_DIR/nginx/config/sites-enabled"
     
-    cp /etc/nginx/sites-available/* "$OUTPUT_DIR/nginx/config/sites-available/" 2>/dev/null || \
-      log_warn "Failed to collect Nginx sites-available"
+    # Process sites-available configs
+    if [ -d "/etc/nginx/sites-available" ]; then
+      find /etc/nginx/sites-available -type f | while read -r site_conf; do
+        site_basename=$(basename "$site_conf")
+        remove_comments "$site_conf" "$OUTPUT_DIR/nginx/config/sites-available/$site_basename"
+      done
+    fi
     
-    cp /etc/nginx/sites-enabled/* "$OUTPUT_DIR/nginx/config/sites-enabled/" 2>/dev/null || \
-      log_warn "Failed to collect Nginx sites-enabled"
+    # Process sites-enabled configs
+    if [ -d "/etc/nginx/sites-enabled" ]; then
+      find /etc/nginx/sites-enabled -type f | while read -r site_conf; do
+        site_basename=$(basename "$site_conf")
+        remove_comments "$site_conf" "$OUTPUT_DIR/nginx/config/sites-enabled/$site_basename"
+      done
+    fi
   else
     log_warn "Nginx config directory not found at /etc/nginx"
   fi
@@ -202,16 +238,21 @@ collect_logs() {
   systemctl status netdata > "$OUTPUT_DIR/netdata/netdata_status.txt" 2>&1 || \
     log_warn "Failed to collect Netdata service status"
   
-  # Netdata configuration
+  # Netdata configuration - without comments
   if [ -d "/etc/netdata" ]; then
-    cp /etc/netdata/netdata.conf "$OUTPUT_DIR/netdata/config/" 2>/dev/null || \
-      log_warn "Failed to collect netdata.conf"
+    if [ -f "/etc/netdata/netdata.conf" ]; then
+      remove_comments "/etc/netdata/netdata.conf" "$OUTPUT_DIR/netdata/config/netdata.conf"
+    else
+      log_warn "netdata.conf not found"
+    fi
     
-    # Health configuration
+    # Health configuration - without comments
     if [ -d "/etc/netdata/health.d" ]; then
       mkdir -p "$OUTPUT_DIR/netdata/config/health.d"
-      cp /etc/netdata/health.d/*.conf "$OUTPUT_DIR/netdata/config/health.d/" 2>/dev/null || \
-        log_warn "Failed to collect Netdata health configs"
+      find /etc/netdata/health.d -name "*.conf" -type f | while read -r health_conf; do
+        health_basename=$(basename "$health_conf")
+        remove_comments "$health_conf" "$OUTPUT_DIR/netdata/config/health.d/$health_basename"
+      done
     fi
   else
     log_warn "Netdata config directory not found at /etc/netdata"
@@ -248,14 +289,21 @@ collect_logs() {
     } > "$OUTPUT_DIR/ssl/certbot_status.txt" 2>&1 || \
       log_warn "Failed to collect certbot status"
     
-    # Renewal hooks
+    # Renewal hooks - without comments
     if [ -d "/etc/letsencrypt/renewal-hooks" ]; then
       mkdir -p "$OUTPUT_DIR/ssl/renewal-hooks"
       for hook_dir in pre deploy post; do
         if [ -d "/etc/letsencrypt/renewal-hooks/$hook_dir" ]; then
           mkdir -p "$OUTPUT_DIR/ssl/renewal-hooks/$hook_dir"
-          cp /etc/letsencrypt/renewal-hooks/$hook_dir/* "$OUTPUT_DIR/ssl/renewal-hooks/$hook_dir/" 2>/dev/null || \
-            log_warn "Failed to collect $hook_dir renewal hooks"
+          find "/etc/letsencrypt/renewal-hooks/$hook_dir" -type f | while read -r hook_file; do
+            hook_basename=$(basename "$hook_file")
+            # For shell scripts, remove comment lines
+            if [[ "$hook_basename" == *.sh ]]; then
+              grep -v "^[[:space:]]*#" "$hook_file" | grep -v "^$" > "$OUTPUT_DIR/ssl/renewal-hooks/$hook_dir/$hook_basename"
+            else
+              cp "$hook_file" "$OUTPUT_DIR/ssl/renewal-hooks/$hook_dir/"
+            fi
+          done
         fi
       done
     fi
@@ -361,6 +409,8 @@ create_consolidated_log() {
     echo "Files specifically excluded:"
     echo "  - system/logs/dmesg (excluded as requested)"
     echo "  - system/logs/kern.log (excluded as requested)"
+    echo ""
+    echo "All comments have been removed from configuration files."
     echo ""
     echo "======================================================"
   } >> "$CONSOLIDATED_LOG"
