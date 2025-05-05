@@ -111,29 +111,78 @@ main() {
     # Update system packages
     update_system
     
+    # Track installation status
+    local pg_success=false
+    local nginx_success=false
+    local netdata_success=false
+    local ssl_renewal_success=false
+    
     # Setup PostgreSQL and pgbouncer
     log_info "Setting up PostgreSQL and pgbouncer..."
-    if ! setup_postgresql; then
+    if setup_postgresql; then
+        log_info "PostgreSQL setup completed successfully"
+        pg_success=true
+    else
         log_error "PostgreSQL setup encountered issues, but continuing with other setup steps"
     fi
     
     # Setup Nginx for subdomain mapping
     log_info "Setting up Nginx for subdomain mapping..."
-    if ! setup_nginx; then
+    if setup_nginx; then
+        log_info "Nginx setup completed successfully"
+        nginx_success=true
+    else
         log_error "Nginx setup encountered issues, but continuing with other setup steps"
     fi
     
     # Setup Netdata monitoring
     log_info "Setting up Netdata monitoring..."
-    if ! setup_netdata; then
-        log_error "Netdata setup encountered issues"
+    if setup_netdata; then
+        log_info "Netdata setup completed successfully"
+        netdata_success=true
+    else
+        log_error "Netdata setup encountered issues, but continuing with other setup steps"
     fi
     
     # Setup SSL certificate auto-renewal
     log_info "Setting up SSL certificate auto-renewal..."
-    if ! setup_ssl_renewal; then
-        log_error "SSL certificate auto-renewal setup encountered issues"
+    if setup_ssl_renewal; then
+        log_info "SSL certificate auto-renewal setup completed successfully"
+        ssl_renewal_success=true
+    else
+        log_error "SSL certificate auto-renewal setup encountered issues, but continuing"
     fi
+    
+    # Print setup summary
+    log_info "-----------------------------------------------"
+    log_info "SETUP SUMMARY"
+    log_info "-----------------------------------------------"
+    
+    if [ "$pg_success" = true ]; then
+        log_info "✓ PostgreSQL setup: SUCCESS"
+    else
+        log_error "✗ PostgreSQL setup: FAILED"
+    fi
+    
+    if [ "$nginx_success" = true ]; then
+        log_info "✓ Nginx setup: SUCCESS"
+    else
+        log_error "✗ Nginx setup: FAILED"
+    fi
+    
+    if [ "$netdata_success" = true ]; then
+        log_info "✓ Netdata setup: SUCCESS"
+    else
+        log_error "✗ Netdata setup: FAILED"
+    fi
+    
+    if [ "$ssl_renewal_success" = true ]; then
+        log_info "✓ SSL renewal setup: SUCCESS"
+    else
+        log_error "✗ SSL renewal setup: FAILED"
+    fi
+    
+    log_info "-----------------------------------------------"
     
     log_info "Initialization complete"
     
