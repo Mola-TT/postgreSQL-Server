@@ -5,7 +5,29 @@ alwaysApply: true
 ---
 # Milestone
 
-## Current Progress: Milestone 4 (Completed)
+## Current Progress: Milestone 5 (In Progress)
+
+## Milestone 5
+- Create `ssl_renewal.sh` under setup folder that:
+  - Sets up automatic renewal of Let's Encrypt SSL certificates
+  - Configures proper renewal hooks to restart/reload necessary services after renewal
+  - Implements fallback mechanisms for when renewal might fail
+  - Creates detailed logging for renewal processes
+  - Ensures proper file permissions for certificate files
+  - Includes graceful error handling with clear error messages
+  - Configures different certificate renewal approaches based on validation method (HTTP vs DNS)
+- Create comprehensive test script (`test_ssl_renewal.sh`) to validate:
+  - Proper certificate renewal configuration (without actually performing renewal)
+  - Renewal hooks functionality
+  - Proper permissions on SSL certificate files
+  - Simulated renewal process with dry-run
+  - Log file creation and error reporting
+- Update init.sh to include SSL renewal configuration in the initialization process
+- Enhanced error handling and logging:
+  - Implement detailed error reporting for renewal failures
+  - Add verification steps for renewal configuration
+  - Create troubleshooting guidance in log messages
+  - Add validation checks to prevent common renewal issues
 
 ## Milestone 4
 - Created `netdata_config.sh` under setup folder that:
