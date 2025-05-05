@@ -25,6 +25,7 @@ fi
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 OUTPUT_DIR="/tmp/postgres_server_logs_${TIMESTAMP}"
 LOG_ARCHIVE="/tmp/postgres_server_logs_${TIMESTAMP}.tar.gz"
+CONSOLIDATED_LOG="/tmp/postgres_server_logs_${TIMESTAMP}.txt"
 
 # Create the output directory
 mkdir -p "$OUTPUT_DIR"
@@ -282,6 +283,9 @@ collect_logs() {
     fi
   fi
   
+  # Create consolidated log file
+  create_consolidated_log
+  
   # Create archive of all collected logs
   log_info "Creating log archive..."
   tar -czf "$LOG_ARCHIVE" -C "$(dirname "$OUTPUT_DIR")" "$(basename "$OUTPUT_DIR")" || {
@@ -292,9 +296,72 @@ collect_logs() {
   
   log_info "Log collection completed successfully"
   log_info "Log archive created: $LOG_ARCHIVE"
+  log_info "Consolidated log created: $CONSOLIDATED_LOG"
   log_info "Raw logs directory: $OUTPUT_DIR"
   
   return 0
+}
+
+# Function to create a consolidated log file from all collected logs
+create_consolidated_log() {
+  log_info "Creating consolidated log file..."
+  
+  # Initialize the consolidated log file with header
+  {
+    echo "======================================================"
+    echo "  POSTGRESQL SERVER CONSOLIDATED LOG - $(date)"
+    echo "======================================================"
+    echo ""
+  } > "$CONSOLIDATED_LOG"
+  
+  # Find all text files in the output directory and concatenate them
+  find "$OUTPUT_DIR" -type f -name "*.txt" -o -name "*.log" | sort | while read -r file; do
+    relative_path="${file#$OUTPUT_DIR/}"
+    
+    {
+      echo "======================================================"
+      echo "FILE: $relative_path"
+      echo "======================================================"
+      echo ""
+      cat "$file"
+      echo ""
+      echo ""
+    } >> "$CONSOLIDATED_LOG"
+  done
+  
+  # Add configuration files
+  find "$OUTPUT_DIR" -type f -name "*.conf" -o -name "*.ini" | sort | while read -r file; do
+    relative_path="${file#$OUTPUT_DIR/}"
+    
+    {
+      echo "======================================================"
+      echo "CONFIG: $relative_path"
+      echo "======================================================"
+      echo ""
+      cat "$file"
+      echo ""
+      echo ""
+    } >> "$CONSOLIDATED_LOG"
+  done
+  
+  # Add summary at the end
+  {
+    echo "======================================================"
+    echo "  LOG COLLECTION SUMMARY"
+    echo "======================================================"
+    echo ""
+    echo "Timestamp: $(date)"
+    echo "Log Collection Path: $OUTPUT_DIR"
+    echo "Archive Path: $LOG_ARCHIVE"
+    echo "Consolidated Log Path: $CONSOLIDATED_LOG"
+    echo ""
+    echo "Files collected:"
+    find "$OUTPUT_DIR" -type f | sort | sed "s|$OUTPUT_DIR/||" | sed 's/^/  - /'
+    echo ""
+    echo "======================================================"
+  } >> "$CONSOLIDATED_LOG"
+  
+  log_info "Consolidated log file created: $CONSOLIDATED_LOG"
 }
 
 # Main function
@@ -312,39 +379,20 @@ main() {
   # Collect logs
   if collect_logs; then
     log_info "Log collection completed successfully"
-    log_info "Please provide the following file to assist with troubleshooting:"
-    log_info "$LOG_ARCHIVE"
+    log_info "Please provide the following files to assist with troubleshooting:"
+    log_info "1. Archive: $LOG_ARCHIVE"
+    log_info "2. Consolidated log: $CONSOLIDATED_LOG"
     
-    # If script is running in a terminal, offer to cat the log file
+    # If script is running in a terminal, offer to view logs
     if [ -t 1 ]; then  # Check if stdout is a terminal
-      read -p "Would you like to display a summary of the collected logs? (y/n): " answer
+      read -p "Would you like to view the consolidated log? (y/n): " answer
       if [[ "$answer" == "y" ]]; then
-        # Display a summary of collected logs
-        echo "============================================="
-        echo "Summary of Collected Logs"
-        echo "============================================="
-        find "$OUTPUT_DIR" -type f | sort
-        
-        # Show key service statuses
-        echo "============================================="
-        echo "PostgreSQL Status"
-        echo "============================================="
-        cat "$OUTPUT_DIR/postgresql/postgres_status.txt" 2>/dev/null || echo "Status not available"
-        
-        echo "============================================="
-        echo "pgbouncer Status"
-        echo "============================================="
-        cat "$OUTPUT_DIR/pgbouncer/pgbouncer_status.txt" 2>/dev/null || echo "Status not available"
-        
-        echo "============================================="
-        echo "Nginx Status"
-        echo "============================================="
-        cat "$OUTPUT_DIR/nginx/nginx_status.txt" 2>/dev/null || echo "Status not available"
-        
-        echo "============================================="
-        echo "Netdata Status"
-        echo "============================================="
-        cat "$OUTPUT_DIR/netdata/netdata_status.txt" 2>/dev/null || echo "Status not available"
+        # Use less to view the consolidated log if available, otherwise cat
+        if command -v less >/dev/null 2>&1; then
+          less "$CONSOLIDATED_LOG"
+        else
+          cat "$CONSOLIDATED_LOG"
+        fi
       fi
     fi
   else
