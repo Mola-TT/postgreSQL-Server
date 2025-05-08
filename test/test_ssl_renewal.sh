@@ -299,12 +299,29 @@ test_renewal_simulation() {
   
   # Run a dry-run renewal to verify everything works correctly
   log_info "Running a simulated renewal with --dry-run..."
-  if certbot renew --dry-run > /dev/null 2>&1; then
+  local certbot_output
+  certbot_output=$(certbot renew --dry-run 2>&1)
+  local certbot_status=$?
+  
+  if [ $certbot_status -eq 0 ]; then
     log_info "✓ PASS: Certificate renewal dry-run successful"
   else
     log_warn "⚠ WARNING: Certificate renewal dry-run failed"
     log_info "Running detailed renewal test for troubleshooting..."
-    certbot renew --dry-run --verbose 2>&1 | tail -20
+    
+    # Extract and log the specific error reasons
+    echo "$certbot_output" | awk '/Type:/{print $0} /Detail:/{print $0} /Hint:/{print $0}' | while read -r line; do
+      log_warn "$line"
+    done
+    
+    # Log additional helpful context
+    if echo "$certbot_output" | grep -q "DNS"; then
+      log_warn "Issue appears to be DNS-related. If using Cloudflare, check API token permissions and DNS propagation time."
+      log_info "This warning is expected during testing when no real certificates exist."
+    elif echo "$certbot_output" | grep -q "404"; then
+      log_warn "Issue appears to be HTTP validation related. Check web server configuration and firewall settings."
+    fi
+    
     log_info "This warning is not critical if no certificates are installed yet"
   fi
   

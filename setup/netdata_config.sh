@@ -410,9 +410,9 @@ configure_postgres_for_netdata() {
   log_info "Creating netdata user in PostgreSQL..."
   
   # Execute SQL commands as postgres user
-  sudo -u postgres psql -c "CREATE USER netdata WITH PASSWORD '$NETDATA_PG_PASSWORD';" 2>/dev/null || {
+  sudo -u postgres psql -c "CREATE USER netdata WITH PASSWORD '$NETDATA_PG_PASSWORD';" > /dev/null 2>&1 || {
     log_info "netdata user already exists, updating password..."
-    sudo -u postgres psql -c "ALTER USER netdata WITH PASSWORD '$NETDATA_PG_PASSWORD';" || {
+    sudo -u postgres psql -c "ALTER USER netdata WITH PASSWORD '$NETDATA_PG_PASSWORD';" > /dev/null 2>&1 || {
       log_error "Failed to create/update netdata user in PostgreSQL"
       return 1
     }

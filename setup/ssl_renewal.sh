@@ -76,6 +76,15 @@ configure_certificate_renewal() {
         log_info "Adding Cloudflare credentials to renewal configuration"
         echo "dns_cloudflare_credentials = /etc/letsencrypt/cloudflare/credentials.ini" >> "/etc/letsencrypt/renewal/$domain.conf"
       fi
+      
+      # Increase DNS propagation time from default 10 seconds to 60 seconds
+      if ! grep -q "dns_cloudflare_propagation_seconds" "/etc/letsencrypt/renewal/$domain.conf"; then
+        log_info "Increasing DNS propagation wait time to 60 seconds"
+        echo "dns_cloudflare_propagation_seconds = 60" >> "/etc/letsencrypt/renewal/$domain.conf"
+      else
+        log_info "Updating DNS propagation wait time to 60 seconds"
+        sed -i 's/dns_cloudflare_propagation_seconds = .*/dns_cloudflare_propagation_seconds = 60/' "/etc/letsencrypt/renewal/$domain.conf"
+      fi
     else
       log_warn "Renewal configuration for $domain not found. Certificate renewal may not work properly."
     fi
