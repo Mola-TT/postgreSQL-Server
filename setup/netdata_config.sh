@@ -425,11 +425,11 @@ configure_postgres_for_netdata() {
   
   # Grant necessary permissions for monitoring
   log_info "Granting necessary permissions to netdata user..."
-  sudo -u postgres psql -c "GRANT CONNECT ON DATABASE postgres TO netdata;" 2>/dev/null || true
-  sudo -u postgres psql -c "GRANT pg_read_all_stats TO netdata;" 2>/dev/null || {
+  sudo -u postgres psql -c "GRANT CONNECT ON DATABASE postgres TO netdata;" > /dev/null 2>&1 || true
+  sudo -u postgres psql -c "GRANT pg_read_all_stats TO netdata;" > /dev/null 2>&1 || {
     # For older PostgreSQL versions that don't have pg_read_all_stats role
     log_info "pg_read_all_stats role not available, using alternative permissions..."
-    sudo -u postgres psql -c "GRANT pg_monitor TO netdata;" 2>/dev/null || true
+    sudo -u postgres psql -c "GRANT pg_monitor TO netdata;" > /dev/null 2>&1 || true
   }
   
   # Update pg_hba.conf to allow netdata to connect with password
