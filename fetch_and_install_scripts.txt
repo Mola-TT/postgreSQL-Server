@@ -14,5 +14,6 @@ Pull from remote regardless of changes
 git fetch origin
 git reset --hard origin/main
 chmod +x init.sh
+chmod +x ./tools/collect_log.sh
 clear
 sudo ./init.sh
