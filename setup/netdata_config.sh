@@ -66,7 +66,7 @@ install_netdata() {
       log_error "Failed to install even basic dependencies for Netdata"
       return 1
     fi
-  }
+  fi
   
   # Install Netdata using the official script with automatic defaults
   log_info "Downloading and running Netdata installer..."
