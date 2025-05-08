@@ -76,7 +76,7 @@ run_tests() {
     
     # Run the tests
     if "$test_script"; then
-        log_info "All tests passed successfully!"
+        : # Do not print 'All tests passed successfully!' here, let the test runner handle it
     else
         log_warn "Some tests failed. Please check the logs for details."
     fi
