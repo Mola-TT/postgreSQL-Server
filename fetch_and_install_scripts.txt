@@ -12,7 +12,7 @@ sudo ./init.sh
 
 Pull from remote regardless of changes
 git fetch origin
-git reset --hard origin/main
+git reset --hard origin/master
 chmod +x init.sh
 chmod +x ./tools/collect_log.sh
 clear
