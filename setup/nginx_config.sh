@@ -54,6 +54,49 @@ install_nginx() {
   return 0
 }
 
+# Install certbot with retry mechanism
+install_certbot() {
+  log_info "Installing certbot..."
+  
+  # Update package lists first
+  apt_update_with_retry 3 20
+  
+  # Try to install certbot and Nginx plugin with retry logic
+  local max_attempts=3
+  local attempt=1
+  local success=false
+  
+  while [ $attempt -le $max_attempts ] && [ "$success" = "false" ]; do
+    log_info "Attempt $attempt of $max_attempts to install certbot..."
+    
+    if apt-get install -y -qq certbot python3-certbot-nginx > /dev/null 2>&1; then
+      # Verify installation succeeded
+      if command -v certbot >/dev/null 2>&1; then
+        log_info "Certbot installed successfully"
+        success=true
+      else
+        log_warn "Certbot command not found after installation attempt $attempt"
+      fi
+    else
+      log_warn "Failed to install certbot on attempt $attempt"
+    fi
+    
+    if [ "$success" = "false" ]; then
+      # Wait before next attempt
+      sleep 5
+      attempt=$((attempt + 1))
+    fi
+  done
+  
+  # Check if installation succeeded
+  if [ "$success" = "true" ]; then
+    return 0
+  else
+    log_error "Failed to install certbot after $max_attempts attempts"
+    return 1
+  fi
+}
+
 # Install SSL certificate using Let's Encrypt if enabled
 install_ssl_certificate() {
   local domain="${NGINX_DOMAIN:-localhost}"
@@ -69,16 +112,19 @@ install_ssl_certificate() {
   
   if [ "$domain" = "localhost" ]; then
     log_info "Using localhost for domain, skipping Let's Encrypt certificate"
+    generate_self_signed_cert "$domain"
     return 0
   fi
   
   log_info "Setting up SSL certificate for $domain..."
   
-  # Check if certbot is installed
+  # Install certbot if needed
   if ! command -v certbot >/dev/null 2>&1; then
-    log_info "Installing certbot..."
-    apt-get update -qq > /dev/null 2>&1
-    apt-get install -y -qq certbot python3-certbot-nginx > /dev/null 2>&1
+    if ! install_certbot; then
+      log_error "Failed to install certbot - falling back to self-signed certificate"
+      generate_self_signed_cert "$domain"
+      return 0
+    fi
   fi
   
   # Check if this is a wildcard domain request (needs DNS validation)
@@ -88,7 +134,38 @@ install_ssl_certificate() {
     # Install Cloudflare DNS plugin for certbot
     if ! dpkg -l | grep -q python3-certbot-dns-cloudflare; then
       log_info "Installing Cloudflare DNS plugin for certbot..."
-      apt-get install -y -qq python3-certbot-dns-cloudflare > /dev/null 2>&1
+      
+      # Try to install Cloudflare plugin with retry logic
+      local max_attempts=3
+      local attempt=1
+      local plugin_success=false
+      
+      while [ $attempt -le $max_attempts ] && [ "$plugin_success" = "false" ]; do
+        if apt-get install -y -qq python3-certbot-dns-cloudflare > /dev/null 2>&1; then
+          # Verify plugin installation succeeded
+          if dpkg -l | grep -q python3-certbot-dns-cloudflare; then
+            log_info "Cloudflare DNS plugin installed successfully"
+            plugin_success=true
+          else
+            log_warn "Cloudflare DNS plugin installation verification failed on attempt $attempt"
+          fi
+        else
+          log_warn "Failed to install Cloudflare DNS plugin on attempt $attempt"
+        fi
+        
+        if [ "$plugin_success" = "false" ]; then
+          # Wait before next attempt
+          sleep 5
+          attempt=$((attempt + 1))
+        fi
+      done
+      
+      # Check if plugin installation succeeded
+      if [ "$plugin_success" != "true" ]; then
+        log_error "Failed to install Cloudflare DNS plugin - falling back to self-signed certificate"
+        generate_self_signed_cert "$domain"
+        return 0
+      fi
     fi
     
     # Create Cloudflare credentials directory and file if needed
