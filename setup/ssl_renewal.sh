@@ -24,9 +24,8 @@ configure_certificate_renewal() {
   if ! command -v certbot >/dev/null 2>&1; then
     log_warn "Certbot not found, attempting to install it..."
     
-    # Try to install certbot
-    export DEBIAN_FRONTEND=noninteractive
-    if apt-get update -qq > /dev/null && apt-get install -y -qq certbot > /dev/null 2>&1; then
+    # Try to install certbot using our retry function
+    if apt_update_with_retry 3 20 && apt_install_with_retry "certbot" 5 30; then
       log_info "Certbot installed successfully"
     else
       log_warn "Failed to install certbot automatically, skipping certificate renewal setup"

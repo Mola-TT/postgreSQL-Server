@@ -13,16 +13,32 @@ update_system() {
         # Clear logs
         clear_logs
         
-        # Update package lists silently with maximum output suppression
-        if ! DEBIAN_FRONTEND=noninteractive apt-get update -y -qq > /dev/null 2>&1; then
-            log_error "Failed to update package lists"
+        # Update package lists silently with retry logic
+        if ! apt_update_with_retry 5 45; then
+            log_error "Failed to update package lists after multiple retries"
             return 1
         fi
         
-        # Upgrade packages silently with maximum output suppression
+        # Upgrade packages silently with retry logic for apt lock issues
         if ! DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq > /dev/null 2>&1; then
-            log_error "Failed to upgrade packages"
-            return 1
+            local retry_count=0
+            local max_retries=5
+            
+            while [ $retry_count -lt $max_retries ]; do
+                log_warn "Failed to upgrade packages, retrying in 45 seconds (retry $((retry_count+1))/$max_retries)..."
+                sleep 45
+                retry_count=$((retry_count + 1))
+                
+                if DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq > /dev/null 2>&1; then
+                    log_info "System packages upgraded successfully on retry $retry_count"
+                    break
+                fi
+                
+                if [ $retry_count -ge $max_retries ]; then
+                    log_error "Failed to upgrade packages after $max_retries retries"
+                    return 1
+                fi
+            done
         fi
         
         log_info "System packages updated successfully"
@@ -47,4 +63,6 @@ set_timezone() {
 
 # Export functions
 export -f update_system
-export -f set_timezone 
+export -f set_timezone
+export -f apt_install_with_retry
+export -f apt_update_with_retry 

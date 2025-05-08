@@ -53,24 +53,19 @@ install_netdata() {
   local install_log="/tmp/netdata_install_$$.log"
   
   # Try installing dependencies with detailed error logging
-  if ! apt-get update -qq > "$install_log" 2>&1; then
+  if ! apt_update_with_retry 5 30; then
     log_warn "Failed to update package index, but will try to continue"
-    cat "$install_log" | head -5 | while read -r line; do
-      log_warn "  $line"
-    done
   fi
   
-  DEBIAN_FRONTEND=noninteractive apt-get install -y curl wget zlib1g-dev util-linux apache2-utils build-essential uuid-dev libmnl-dev > "$install_log" 2>&1 || {
+  # Install dependencies with retry logic
+  if ! apt_install_with_retry "curl wget zlib1g-dev util-linux apache2-utils build-essential uuid-dev libmnl-dev" 3 20; then
     log_warn "Failed to install all dependencies, but will try to continue with basic ones"
+    
     # Try minimal dependencies
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl wget > /dev/null 2>&1 || {
+    if ! apt_install_with_retry "curl wget" 3 20; then
       log_error "Failed to install even basic dependencies for Netdata"
-      cat "$install_log" | head -10 | while read -r line; do
-        log_error "  $line"
-      done
-      rm -f "$install_log"
       return 1
-    }
+    fi
   }
   
   # Install Netdata using the official script with automatic defaults

@@ -12,11 +12,8 @@ install_postgresql() {
   # Check if postgresql-common is installed
   if ! dpkg -l | grep -q postgresql-common; then
     log_info "Installing postgresql-common from default repositories..."
-    # Use noninteractive frontend and redirect all output to suppress package installation messages
-    export DEBIAN_FRONTEND=noninteractive
-    if ! apt-get install -y -qq postgresql-common > /dev/null 2>&1; then
-      log_warn "Failed to install postgresql-common, but continuing with repository setup"
-    fi
+    # Use our retry function to handle package manager locks
+    apt_install_with_retry "postgresql-common" 5 30
   fi
   
   # Create directory for PostgreSQL repository key with proper permissions
@@ -62,12 +59,7 @@ install_postgresql() {
   
   # Update package lists with better error capture
   log_info "Updating package lists..."
-  local update_output
-  update_output=$(apt-get update 2>&1)
-  if [ $? -ne 0 ]; then
-    log_error "Failed to update package lists. Error details:"
-    log_error "$update_output"
-    
+  if ! apt_update_with_retry 5 30; then
     # Try running the official PostgreSQL repository setup script as a fallback
     if [ -f "/usr/share/postgresql-common/pgdg/apt.postgresql.org.sh" ]; then
       log_warn "Trying fallback method: Running the official PostgreSQL repository setup script"
@@ -77,10 +69,8 @@ install_postgresql() {
       else
         log_info "Successfully configured repository using official script"
         # Try updating package lists again
-        update_output=$(apt-get update 2>&1)
-        if [ $? -ne 0 ]; then
-          log_error "Still failed to update package lists after official script. Error details:"
-          log_error "$update_output"
+        if ! apt_update_with_retry 5 30; then
+          log_error "Still failed to update package lists after official script."
           return 1
         fi
       fi
@@ -92,10 +82,9 @@ install_postgresql() {
   
   # Install PostgreSQL
   log_info "Installing PostgreSQL packages..."
-  # Use noninteractive frontend and redirect all output
-  export DEBIAN_FRONTEND=noninteractive
-  if ! apt-get install -y -qq postgresql postgresql-contrib > /dev/null 2>&1; then
-    log_error "Failed to install PostgreSQL packages"
+  # Use our retry function for apt installation
+  if ! apt_install_with_retry "postgresql postgresql-contrib" 5 30; then
+    log_error "Failed to install PostgreSQL packages after multiple retries"
     return 1
   fi
   

@@ -26,60 +26,15 @@ install_nginx() {
     return 0
   fi
   
-  # Install Nginx package with noninteractive frontend and suppressed output
-  export DEBIAN_FRONTEND=noninteractive
-  
-  # Update package index if it hasn't been done in a while
+  # Update package index
   log_info "Updating package index..."
-  apt-get update -qq || {
-    log_warn "Failed to update package index, but will try to install Nginx anyway"
-  }
+  apt_update_with_retry 5 30
   
-  # Try to install Nginx with detailed error handling
+  # Install Nginx with retry logic
   log_info "Installing Nginx packages..."
-  local temp_log="/tmp/nginx_install_$$.log"
-  if ! apt-get install -y nginx > "$temp_log" 2>&1; then
-    log_error "Failed to install Nginx"
-    
-    # Check for specific error conditions in the log
-    if grep -q "Could not get lock" "$temp_log"; then
-      log_error "Another package manager process is running. Try again later."
-    elif grep -q "Unable to locate package nginx" "$temp_log"; then
-      log_error "Nginx package not found. Repository might be unavailable."
-      
-      # Try to add the nginx repository if it's missing
-      log_info "Attempting to add Nginx repository..."
-      if ! command -v add-apt-repository >/dev/null 2>&1; then
-        apt-get install -y software-properties-common > /dev/null 2>&1 || true
-      fi
-      
-      add-apt-repository -y ppa:nginx/stable > /dev/null 2>&1
-      apt-get update -qq > /dev/null 2>&1
-      
-      # Try installation one more time
-      log_info "Retrying Nginx installation..."
-      if ! apt-get install -y nginx > "$temp_log" 2>&1; then
-        log_error "Second attempt to install Nginx failed."
-        cat "$temp_log" | head -10 | while read -r line; do
-          log_error "  $line"
-        done
-        rm -f "$temp_log"
-        return 1
-      else
-        log_info "Nginx installed successfully after adding repository"
-        rm -f "$temp_log"
-      fi
-    else
-      # Show the first few lines of error output
-      log_error "Nginx installation error details:"
-      cat "$temp_log" | head -10 | while read -r line; do
-        log_error "  $line"
-      done
-      rm -f "$temp_log"
-      return 1
-    fi
-  else
-    rm -f "$temp_log"
+  if ! apt_install_with_retry "nginx" 5 30; then
+    log_error "Failed to install Nginx, but will continue with limited functionality"
+    return 1
   fi
   
   # Check if Nginx was actually installed
