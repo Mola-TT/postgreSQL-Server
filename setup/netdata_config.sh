@@ -38,6 +38,11 @@ else
   exit 1
 fi
 
+# Source PostgreSQL utilities for consistent SQL execution
+if [ -f "$NETDATA_LIB_DIR/pg_extract_hash.sh" ]; then
+  source "$NETDATA_LIB_DIR/pg_extract_hash.sh"
+fi
+
 # Install Netdata if not already installed
 install_netdata() {
   log_info "Installing Netdata..."
@@ -410,22 +415,22 @@ configure_postgres_for_netdata() {
   log_info "Creating netdata user in PostgreSQL..."
   
   # Execute SQL commands as postgres user
-  sudo -u postgres psql -c "CREATE USER netdata WITH PASSWORD '$NETDATA_PG_PASSWORD';" > /dev/null 2>&1 || {
+  if ! execute_pg_command "postgres" "CREATE USER netdata WITH PASSWORD '$NETDATA_PG_PASSWORD';"; then
     log_info "netdata user already exists, updating password..."
-    sudo -u postgres psql -c "ALTER USER netdata WITH PASSWORD '$NETDATA_PG_PASSWORD';" > /dev/null 2>&1 || {
+    if ! execute_pg_command "postgres" "ALTER USER netdata WITH PASSWORD '$NETDATA_PG_PASSWORD';"; then
       log_error "Failed to create/update netdata user in PostgreSQL"
       return 1
-    }
-  }
+    fi
+  fi
   
   # Grant necessary permissions for monitoring
   log_info "Granting necessary permissions to netdata user..."
-  sudo -u postgres psql -c "GRANT CONNECT ON DATABASE postgres TO netdata;" > /dev/null 2>&1 || true
-  sudo -u postgres psql -c "GRANT pg_read_all_stats TO netdata;" > /dev/null 2>&1 || {
+  execute_pg_command "postgres" "GRANT CONNECT ON DATABASE postgres TO netdata;" || true
+  if ! execute_pg_command "postgres" "GRANT pg_read_all_stats TO netdata;"; then
     # For older PostgreSQL versions that don't have pg_read_all_stats role
     log_info "pg_read_all_stats role not available, using alternative permissions..."
-    sudo -u postgres psql -c "GRANT pg_monitor TO netdata;" > /dev/null 2>&1 || true
-  }
+    execute_pg_command "postgres" "GRANT pg_monitor TO netdata;" || true
+  fi
   
   # Update pg_hba.conf to allow netdata to connect with password
   log_info "Updating PostgreSQL client authentication configuration..."

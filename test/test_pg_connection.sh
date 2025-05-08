@@ -238,8 +238,8 @@ test_temp_user_connection() {
     
     log_info "Creating temporary test user: $temp_user"
     
-    # Create a temporary user
-    if ! execute_silently "su - postgres -c \"psql -c \\\"CREATE USER $temp_user WITH PASSWORD '$temp_password';\\\"\"" \
+    # Create a temporary user - redirect output to /dev/null
+    if ! execute_silently "su - postgres -c \"psql -c \\\"CREATE USER $temp_user WITH PASSWORD '$temp_password';\\\"\" > /dev/null 2>&1" \
         "" \
         "Failed to create temporary test user"; then
         log_status_fail "Could not create temporary test user"
@@ -265,7 +265,7 @@ test_temp_user_connection() {
         execute_silently "sudo chmod 600 /etc/pgbouncer/userlist.txt" "" "Failed to fix permissions"
     else
         # For scram-sha-256 or md5, first set a password that can be extracted
-        execute_silently "su - postgres -c \"psql -c \\\"ALTER USER $temp_user WITH PASSWORD '$temp_password';\\\"\"" \
+        execute_silently "su - postgres -c \"psql -c \\\"ALTER USER $temp_user WITH PASSWORD '$temp_password';\\\"\" > /dev/null 2>&1" \
             "" \
             "Failed to update temporary user password"
             
@@ -362,9 +362,9 @@ test_temp_user_connection() {
         "" \
         "Failed to reload pgbouncer after cleanup"
     
-    # Drop the temporary user
+    # Drop the temporary user - redirect output to /dev/null
     log_info "Cleaning up: Removing temporary test user"
-    execute_silently "su - postgres -c \"psql -c \\\"DROP USER IF EXISTS $temp_user;\\\"\"" \
+    execute_silently "su - postgres -c \"psql -c \\\"DROP USER IF EXISTS $temp_user;\\\"\" > /dev/null 2>&1" \
         "" \
         "Failed to remove temporary test user" || log_warn "Could not remove temporary test user, manual cleanup needed"
     

@@ -5,6 +5,9 @@
 # Script directory - using unique variable name to avoid conflicts
 PG_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Source the PostgreSQL extraction utilities
+source "$PG_SCRIPT_DIR/../lib/pg_extract_hash.sh"
+
 # Function to install PostgreSQL
 install_postgresql() {
   log_info "Installing PostgreSQL..."
@@ -423,9 +426,6 @@ configure_pgbouncer() {
   
   # Create or update the auth file for pgbouncer
   log_info "Setting up pgbouncer authentication..."
-  
-  # Source the extract_hash utility
-  source "$PG_SCRIPT_DIR/../lib/pg_extract_hash.sh"
   
   # Extract hash for PostgreSQL superuser
   if [ -n "${PG_SUPERUSER_PASSWORD}" ]; then
