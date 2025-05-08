@@ -134,16 +134,18 @@ EOF
   
   # Test renewal process to ensure hooks are set up correctly
   log_info "Testing certificate renewal process (dry run)..."
-  if certbot renew --dry-run > /dev/null 2>&1; then
+  local certbot_output certbot_status
+  certbot_output=$(certbot renew --dry-run 2>&1)
+  certbot_status=$?
+  if [ $certbot_status -eq 0 ]; then
     log_info "Certificate renewal test successful"
   else
-    log_warn "Certificate renewal test failed, please check certbot configuration"
-    # Get detailed output for troubleshooting
-    log_info "Running detailed renewal test for troubleshooting..."
-    certbot renew --dry-run --verbose 2>&1 | tail -20
-    
-    # Even if the test fails, we still consider the setup successful since we've set up the hooks
-    log_warn "Proceeding despite renewal test failure"
+    log_warn "⚠ WARNING: Certificate renewal dry-run failed"
+    # Print only the most relevant error lines
+    echo "$certbot_output" | grep -E 'Detail:|Type: unauthorized|TXT record|DNS problem|error:' | while read -r line; do
+      log_warn "$line"
+    done
+    log_info "This warning is not critical if no certificates are installed yet"
   fi
   
   log_info "Certificate renewal configuration completed"
