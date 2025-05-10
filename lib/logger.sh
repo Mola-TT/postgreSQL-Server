@@ -74,7 +74,7 @@ log_pass() {
   local GREEN="\033[1;32m"
   local NC="\033[0m"
   local timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
-  echo -e "${timestamp} [${GREEN}PASS${NC}] $*"
+  echo -e "[${timestamp}] [${GREEN}PASS${NC}] $*"
 }
 
 # Ensure log file directory exists
