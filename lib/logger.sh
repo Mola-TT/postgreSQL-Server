@@ -69,6 +69,14 @@ log_error() {
   log "ERROR" "$1"
 }
 
+log_pass() {
+  # Green color for PASS
+  local GREEN="\033[1;32m"
+  local NC="\033[0m"
+  local timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+  echo -e "${timestamp} [${GREEN}PASS${NC}] $*"
+}
+
 # Ensure log file directory exists
 mkdir -p "$(dirname "${LOG_FILE}")" 2>/dev/null
 
