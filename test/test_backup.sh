@@ -363,7 +363,7 @@ test_email_notification() {
   if ! command -v sendmail >/dev/null 2>&1; then
     log_warn "sendmail not found, skipping email notification test"
     return 0
-  }
+  fi
   
   # Create a test email file for success notification
   local test_success_email_file="/tmp/test_backup_success_email.txt"
