@@ -5,7 +5,7 @@ alwaysApply: true
 ---
 # Milestone
 
-## Current Progress: Milestone 5 (In Progress)
+## Current Progress: Milestone 5 (Completed)
 
 ## Milestone 5
 - Created `ssl_renewal.sh` under setup folder that:
@@ -16,18 +16,34 @@ alwaysApply: true
   - Ensured proper file permissions for certificate files
   - Included graceful error handling with clear error messages
   - Configured different certificate renewal approaches based on validation method (HTTP vs DNS)
+  - Added special handling for DNS propagation delays in Cloudflare DNS validation
+  - Implemented non-production mode with minimal renewal reminders when certbot isn't available
 - Created comprehensive test script (`test_ssl_renewal.sh`) to validate:
   - Proper certificate renewal configuration (without actually performing renewal)
   - Renewal hooks functionality
   - Proper permissions on SSL certificate files
   - Simulated renewal process with dry-run
   - Log file creation and error reporting
-- Updated init.sh to include SSL renewal configuration in the initialization process
+  - Added specific handling for non-production environments
+  - Provided detailed diagnostics for renewal simulation failures
+- Updated init.sh and logger.sh:
+  - Added SSL renewal configuration in the initialization process
+  - Enhanced logging with green PASS output for test successes
+  - Improved output formatting with consistent timestamps and spacing
+  - Added empty lines between test sections for improved readability
 - Enhanced error handling and logging:
   - Implemented detailed error reporting for renewal failures
   - Added verification steps for renewal configuration
   - Created troubleshooting guidance in log messages
   - Added validation checks to prevent common renewal issues
+  - Suppressed SQL command outputs to keep logs clean and focused
+  - Created helper functions for executing PostgreSQL commands silently
+- Fixed bugs and improved robustness:
+  - Fixed Let's Encrypt certificate handling with PRODUCTION=false environments
+  - Added robust certbot installation with retry logic and verification
+  - Enhanced test sequence to ensure proper dependencies between tests
+  - Increased DNS propagation delay time for Cloudflare validation from 10s to 60s
+  - Tagged code with Milestone_5 for version control and release management
 
 ## Milestone 4
 - Created `netdata_config.sh` under setup folder that:
