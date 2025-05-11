@@ -68,7 +68,11 @@ Date: $(date)
 EOF
   
   # Use different methods to send email based on what's available
-  if command -v mailx >/dev/null 2>&1; then
+  if command -v msmtp >/dev/null 2>&1; then
+    # Use msmtp if available (preferred method)
+    log_info "Using msmtp to send email..."
+    cat "$email_file" | msmtp -a default "$recipient" > /dev/null 2>&1
+  elif command -v mailx >/dev/null 2>&1; then
     # Use mailx if available
     if [ -n "$SMTP_USERNAME" ] && [ -n "$SMTP_PASSWORD" ]; then
       cat "$email_file" | mailx -S "smtp=$SMTP_SERVER:$SMTP_PORT" \
