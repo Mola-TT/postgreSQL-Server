@@ -163,13 +163,26 @@ main() {
         if command -v psql >/dev/null 2>&1; then
             log_info "Running initial dynamic optimization..."
             
-            # Execute the script directly to avoid function name conflicts
-            if bash "$SCRIPT_DIR/setup/dynamic_optimization.sh"; then
+            # Execute the script in a completely separate process to avoid any variable or function conflicts
+            # We create a temporary wrapper script to ensure complete isolation
+            TEMP_SCRIPT=$(mktemp)
+            cat > "$TEMP_SCRIPT" << EOF
+#!/bin/bash
+# Temporary wrapper to execute dynamic_optimization script
+"$SCRIPT_DIR/setup/dynamic_optimization.sh" "$@"
+exit \$?
+EOF
+            chmod +x "$TEMP_SCRIPT"
+            
+            if "$TEMP_SCRIPT"; then
                 log_info "Dynamic optimization completed successfully"
                 dynamic_opt_success=true
             else
                 log_error "Dynamic optimization encountered issues, but continuing"
             fi
+            
+            # Clean up the temporary script
+            rm -f "$TEMP_SCRIPT"
         else
             log_warn "PostgreSQL not installed, skipping dynamic optimization"
         fi
@@ -180,13 +193,26 @@ main() {
     # Setup hardware change detector
     log_info "Setting up hardware change detection service..."
     if [ "${ENABLE_HARDWARE_CHANGE_DETECTOR:-true}" = true ]; then
-        # Execute the script directly with --install argument
-        if bash "$SCRIPT_DIR/setup/hardware_change_detector.sh" --install; then
+        # Execute the script in a completely separate process to avoid any variable or function conflicts
+        # We create a temporary wrapper script to ensure complete isolation
+        TEMP_SCRIPT=$(mktemp)
+        cat > "$TEMP_SCRIPT" << EOF
+#!/bin/bash
+# Temporary wrapper to execute hardware_change_detector script
+"$SCRIPT_DIR/setup/hardware_change_detector.sh" --install
+exit \$?
+EOF
+        chmod +x "$TEMP_SCRIPT"
+        
+        if "$TEMP_SCRIPT"; then
             log_info "Hardware change detector service installed successfully"
             hw_detector_success=true
         else
             log_error "Hardware change detector service installation encountered issues, but continuing"
         fi
+        
+        # Clean up the temporary script
+        rm -f "$TEMP_SCRIPT"
     else
         log_info "Hardware change detector disabled (set ENABLE_HARDWARE_CHANGE_DETECTOR=true to enable)"
     fi
