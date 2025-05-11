@@ -149,7 +149,7 @@ Please review the changes and monitor system performance.
   send_email_notification "$HARDWARE_CHANGE_EMAIL_SUBJECT" "$message"
 }
 
-# Function to send optimization completion notification
+# Function to send optimization notification
 send_optimization_notification() {
   local report_file="$1"
   
@@ -157,7 +157,7 @@ send_optimization_notification() {
   if [ ! -f "$report_file" ]; then
     log_warn "Optimization report file not found: $report_file"
     return 1
-  }
+  fi
   
   # Read the report file content
   local report_content=$(cat "$report_file")
