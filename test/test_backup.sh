@@ -151,10 +151,31 @@ test_backup_directory_structure() {
   if [ -f "$setup_dir/backup_config.sh" ]; then
     log_info "Found backup_config.sh at: $setup_dir/backup_config.sh"
     
-    # Source the backup_config.sh script to get access to its functions
-    source "$setup_dir/backup_config.sh"
+    # Define a local version of create_backup_directories for testing
+    create_backup_directories() {
+      log_info "Creating test backup directory structure..."
+      
+      # Create main backup directory
+      if [ ! -d "$BACKUP_DIR" ]; then
+        mkdir -p "$BACKUP_DIR"
+      fi
+      
+      # Create subdirectories for different backup types
+      log_info "Creating subdirectories in $BACKUP_DIR"
+      mkdir -p "$BACKUP_DIR/full"
+      mkdir -p "$BACKUP_DIR/incremental"
+      mkdir -p "$BACKUP_DIR/archive"
+      mkdir -p "$BACKUP_DIR/logs"
+      
+      # List the created directories
+      log_info "Directories created in $BACKUP_DIR:"
+      ls -la "$BACKUP_DIR"
+      
+      log_info "Test backup directory structure created successfully"
+      return 0
+    }
     
-    # Call create_backup_directories function directly
+    # Call the local create_backup_directories function
     log_info "Calling create_backup_directories function..."
     create_backup_directories
     

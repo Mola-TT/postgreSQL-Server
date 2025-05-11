@@ -52,6 +52,12 @@ install_backup_tools() {
 create_backup_directories() {
   log_info "Creating backup directory structure..."
   
+  # Check if BACKUP_DIR is set
+  if [ -z "$BACKUP_DIR" ]; then
+    log_error "BACKUP_DIR is not set"
+    return 1
+  fi
+  
   # Create main backup directory
   if [ ! -d "$BACKUP_DIR" ]; then
     mkdir -p "$BACKUP_DIR"
@@ -63,9 +69,30 @@ create_backup_directories() {
   mkdir -p "$BACKUP_DIR/daily" "$BACKUP_DIR/weekly" "$BACKUP_DIR/monthly"
   mkdir -p "$BACKUP_DIR/logs" "$BACKUP_DIR/conf"
   
-  # Set proper permissions
-  chown -R postgres:postgres "$BACKUP_DIR"
-  chmod -R 750 "$BACKUP_DIR"
+  # Verify directories were created
+  local all_created=true
+  for subdir in "full" "incremental" "archive" "daily" "weekly" "monthly" "logs" "conf"; do
+    if [ ! -d "$BACKUP_DIR/$subdir" ]; then
+      log_error "Failed to create directory: $BACKUP_DIR/$subdir"
+      all_created=false
+    else
+      log_debug "Directory created: $BACKUP_DIR/$subdir"
+    fi
+  done
+  
+  if [ "$all_created" != "true" ]; then
+    log_error "Failed to create one or more backup directories"
+    return 1
+  fi
+  
+  # Set proper permissions if running as root and postgres user exists
+  if [ "$(id -u)" -eq 0 ] && id -u postgres >/dev/null 2>&1; then
+    chown -R postgres:postgres "$BACKUP_DIR"
+    chmod -R 750 "$BACKUP_DIR"
+    log_info "Set ownership to postgres:postgres and permissions to 750"
+  else
+    log_debug "Skipping permission changes (not running as root or postgres user not found)"
+  fi
   
   log_info "Backup directory structure created successfully"
   return 0
