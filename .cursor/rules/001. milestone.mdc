@@ -21,6 +21,9 @@ alwaysApply: true
   - Records previous vs. new hardware specifications for comparison
   - Performs gradual/phased optimization during production hours
   - Creates backup of previous configuration before applying changes
+  - Implements robust email notification system for hardware changes
+  - Provides multiple fallback methods for PostgreSQL data directory detection
+  - Includes test email functionality to verify email configuration
 - Update PostgreSQL configuration for dynamic scaling:
   - Implement dynamic shared_buffers sizing (percentage of total RAM)
   - Configure work_mem based on available memory and connection count
@@ -41,12 +44,23 @@ alwaysApply: true
   - Performance improvements after optimization
   - Correct behavior during hardware change simulations
   - Resource utilization before and after optimization
+- Create comprehensive test script (`test_email_notification.sh`) to validate:
+  - Email notifications for hardware changes
+  - Email notifications for optimization completion
+  - Basic test email functionality
+  - Proper email tool installation and configuration
+  - Fallback mechanisms for email sending
 - Create analytics and reporting for optimization:
   - Generate optimization reports with before/after comparisons
   - Visualize performance metrics through Netdata dashboards
   - Implement predictive analysis for future resource needs
   - Create alerting system for approaching resource limits
   - Document optimization decisions and rationale
+- Enhanced environment configuration:
+  - Added email notification settings to environment files
+  - Added TEST_EMAIL_SUBJECT variable for email testing
+  - Implemented backward compatibility with Netdata email settings
+  - Unified email configuration across different components
 
 ## Milestone 5
 - Created `ssl_renewal.sh` under setup folder that:
