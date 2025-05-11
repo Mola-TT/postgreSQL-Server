@@ -107,10 +107,12 @@ test_email_notification() {
   log_info "HARDWARE_CHANGE_EMAIL_SENDER: $HARDWARE_CHANGE_EMAIL_SENDER"
   log_info "HARDWARE_CHANGE_EMAIL_SUBJECT: $HARDWARE_CHANGE_EMAIL_SUBJECT"
   log_info "OPTIMIZATION_EMAIL_SUBJECT: $OPTIMIZATION_EMAIL_SUBJECT"
-  log_info "NETDATA_SMTP_SERVER: $NETDATA_SMTP_SERVER"
-  log_info "NETDATA_SMTP_PORT: $NETDATA_SMTP_PORT"
-  log_info "NETDATA_SMTP_TLS: $NETDATA_SMTP_TLS"
-  log_info "NETDATA_SMTP_USERNAME: ${NETDATA_SMTP_USERNAME:-(not set)}"
+  log_info "EMAIL_SENDER: $EMAIL_SENDER"
+  log_info "EMAIL_RECIPIENT: $EMAIL_RECIPIENT"
+  log_info "SMTP_SERVER: $SMTP_SERVER"
+  log_info "SMTP_PORT: $SMTP_PORT"
+  log_info "SMTP_TLS: $SMTP_TLS"
+  log_info "SMTP_USERNAME: ${SMTP_USERNAME:-(not set)}"
   
   # Check for required email tools
   log_info "Checking for email sending tools..."
@@ -136,13 +138,6 @@ test_email_notification() {
     OPTIMIZATION_EMAIL_SUBJECT=${OPTIMIZATION_EMAIL_SUBJECT:-"[TEST] Optimization Completed"}
     OPTIMIZATION_REPORT_DIR="$temp_dir/reports"
     mkdir -p "$OPTIMIZATION_REPORT_DIR"
-    
-    # Set SMTP settings from Netdata settings if not already set
-    SMTP_SERVER=${SMTP_SERVER:-$NETDATA_SMTP_SERVER}
-    SMTP_PORT=${SMTP_PORT:-$NETDATA_SMTP_PORT}
-    SMTP_TLS=${SMTP_TLS:-$NETDATA_SMTP_TLS}
-    SMTP_USERNAME=${SMTP_USERNAME:-$NETDATA_SMTP_USERNAME}
-    SMTP_PASSWORD=${SMTP_PASSWORD:-$NETDATA_SMTP_PASSWORD}
     
     # Now source the hardware_change_detector.sh to use its real email sending function
     source "$SETUP_DIR/hardware_change_detector.sh"
