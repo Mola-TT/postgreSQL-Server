@@ -463,8 +463,34 @@ configure_backup_monitoring() {
     return 0
   fi
   
+  # Determine Netdata plugins directory
+  local netdata_plugins_dir=""
+  local possible_plugin_dirs=(
+    "/usr/lib/netdata/plugins.d"
+    "/usr/libexec/netdata/plugins.d"
+    "/opt/netdata/usr/libexec/netdata/plugins.d"
+    "/var/lib/netdata/plugins.d"
+  )
+  
+  for dir in "${possible_plugin_dirs[@]}"; do
+    if [ -d "$dir" ]; then
+      netdata_plugins_dir="$dir"
+      log_info "Found Netdata plugins directory at: $netdata_plugins_dir"
+      break
+    fi
+  done
+  
+  if [ -z "$netdata_plugins_dir" ]; then
+    log_warn "Netdata plugins directory not found, creating default location"
+    netdata_plugins_dir="/usr/lib/netdata/plugins.d"
+    mkdir -p "$netdata_plugins_dir"
+  fi
+  
   # Create backup status check script
-  local backup_status_script="/usr/lib/netdata/plugins.d/backup_status.sh"
+  local backup_status_script="$netdata_plugins_dir/backup_status.sh"
+  
+  # Create the directory if it doesn't exist
+  mkdir -p "$(dirname "$backup_status_script")"
   
   cat > "$backup_status_script" << 'EOF'
 #!/bin/bash
@@ -539,9 +565,18 @@ EOF
   # Set proper permissions
   chmod 755 "$backup_status_script"
   
+  # Check if jq is installed (needed for JSON parsing in the script)
+  if ! command -v jq >/dev/null 2>&1; then
+    log_info "Installing jq for JSON parsing in backup monitoring..."
+    if ! install_package_with_retry "jq" 3 10; then
+      log_warn "Failed to install jq. Backup monitoring may not work correctly."
+    fi
+  fi
+  
   # Create Netdata configuration for backup monitoring
-  local netdata_conf="/etc/netdata/health.d/pg_backup_checks.conf"
-  mkdir -p "$(dirname "$netdata_conf")"
+  local netdata_conf_dir="/etc/netdata/health.d"
+  local netdata_conf="$netdata_conf_dir/pg_backup_checks.conf"
+  mkdir -p "$netdata_conf_dir"
   
   cat > "$netdata_conf" << EOF
 # PostgreSQL Backup Health Checks
@@ -583,7 +618,12 @@ template: pg_backup_failures
 EOF
 
   # Restart Netdata to apply changes
-  systemctl restart netdata > /dev/null 2>&1
+  if systemctl is-active --quiet netdata; then
+    log_info "Restarting Netdata to apply backup monitoring configuration..."
+    systemctl restart netdata > /dev/null 2>&1 || log_warn "Failed to restart Netdata"
+  else
+    log_warn "Netdata service not running, configuration will be applied when Netdata starts"
+  fi
   
   log_info "Backup monitoring configured successfully"
   return 0
