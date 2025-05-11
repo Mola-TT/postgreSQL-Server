@@ -426,7 +426,7 @@ test_backup_encryption() {
   if ! command -v openssl >/dev/null 2>&1; then
     log_warn "openssl not found, encryption may not work"
     return 0
-  }
+  fi
   
   # Create a test file to encrypt
   local test_file="/tmp/test_backup_encryption.txt"
@@ -487,7 +487,7 @@ test_backup_compression() {
   if ! command -v gzip >/dev/null 2>&1; then
     log_warn "gzip not found, compression may not work"
     return 0
-  }
+  fi
   
   # Create a test file to compress
   local test_file="/tmp/test_backup_compression.txt"
