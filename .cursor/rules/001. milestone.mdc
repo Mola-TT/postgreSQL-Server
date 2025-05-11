@@ -5,7 +5,40 @@ alwaysApply: true
 ---
 # Milestone
 
-## Current Progress: Milestone 6 (Completed)
+## Current Progress: Milestone 7 (In Progress)
+
+## Milestone 7 (In Progress)
+- Create `backup_config.sh` under setup folder that:
+  - Implements automated PostgreSQL database backups
+  - Configures rotational backup strategy with daily, weekly, and monthly retention
+  - Sets up incremental and full backup schedules
+  - Implements backup compression to minimize storage requirements
+  - Configures secure backup storage with proper permissions
+  - Creates email notifications for backup success/failure
+  - Implements backup verification to ensure data integrity
+  - Adds backup encryption options for sensitive data
+- Create backup management scripts:
+  - Script to list available backups
+  - Script to restore from specific backup points
+  - Script to verify backup integrity
+  - Script to manage backup retention policies
+- Create comprehensive test script (`test_backup.sh`) to validate:
+  - Backup creation and scheduling
+  - Backup rotation and retention
+  - Backup compression and encryption
+  - Backup restoration process
+  - Email notifications for backup events
+- Update environment configuration:
+  - Add backup-specific settings to default.env and user.env.template
+  - Add backup schedule configuration
+  - Add backup retention policy settings
+  - Add backup location configuration
+  - Add backup encryption settings
+- Implement backup monitoring:
+  - Add Netdata dashboard for backup status
+  - Create backup health checks
+  - Implement backup size and growth monitoring
+  - Add backup failure alerting
 
 ## Milestone 6 (Completed)
 - Create `dynamic_optimization.sh` under setup folder that:
