@@ -163,13 +163,29 @@ main() {
         if command -v psql >/dev/null 2>&1; then
             log_info "Running initial dynamic optimization..."
             
+            # Check if script exists
+            local dyn_opt_script="$SCRIPT_DIR/setup/dynamic_optimization.sh"
+            if [ ! -f "$dyn_opt_script" ]; then
+                # Try to find the script in other common locations
+                for possible_path in "/root/postgreSQL-Server/setup/dynamic_optimization.sh" "/home/*/postgreSQL-Server/setup/dynamic_optimization.sh"; do
+                    if [ -f "$possible_path" ]; then
+                        dyn_opt_script="$possible_path"
+                        log_info "Found dynamic optimization script at: $dyn_opt_script"
+                        break
+                    fi
+                done
+            fi
+            
+            # Ensure script has execute permission
+            chmod +x "$dyn_opt_script" 2>/dev/null || log_warn "Failed to set executable permission on dynamic_optimization.sh"
+            
             # Execute the script in a completely separate process to avoid any variable or function conflicts
             # We create a temporary wrapper script to ensure complete isolation
             TEMP_SCRIPT=$(mktemp)
             cat > "$TEMP_SCRIPT" << EOF
 #!/bin/bash
 # Temporary wrapper to execute dynamic_optimization script
-"$SCRIPT_DIR/setup/dynamic_optimization.sh" "$@"
+"$dyn_opt_script" "$@"
 exit \$?
 EOF
             chmod +x "$TEMP_SCRIPT"
@@ -193,13 +209,29 @@ EOF
     # Setup hardware change detector
     log_info "Setting up hardware change detection service..."
     if [ "${ENABLE_HARDWARE_CHANGE_DETECTOR:-true}" = true ]; then
+        # Check if script exists
+        local hw_detector_script="$SCRIPT_DIR/setup/hardware_change_detector.sh"
+        if [ ! -f "$hw_detector_script" ]; then
+            # Try to find the script in other common locations
+            for possible_path in "/root/postgreSQL-Server/setup/hardware_change_detector.sh" "/home/*/postgreSQL-Server/setup/hardware_change_detector.sh"; do
+                if [ -f "$possible_path" ]; then
+                    hw_detector_script="$possible_path"
+                    log_info "Found hardware change detector script at: $hw_detector_script"
+                    break
+                fi
+            done
+        fi
+        
+        # Ensure script has execute permission
+        chmod +x "$hw_detector_script" 2>/dev/null || log_warn "Failed to set executable permission on hardware_change_detector.sh"
+        
         # Execute the script in a completely separate process to avoid any variable or function conflicts
         # We create a temporary wrapper script to ensure complete isolation
         TEMP_SCRIPT=$(mktemp)
         cat > "$TEMP_SCRIPT" << EOF
 #!/bin/bash
 # Temporary wrapper to execute hardware_change_detector script
-"$SCRIPT_DIR/setup/hardware_change_detector.sh" --install
+"$hw_detector_script" --install
 exit \$?
 EOF
         chmod +x "$TEMP_SCRIPT"
