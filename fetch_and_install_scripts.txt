@@ -15,5 +15,6 @@ git fetch origin
 git reset --hard origin/master
 chmod +x init.sh
 chmod +x ./tools/collect_log.sh
+chmod +x ./test/run_tests.sh
 clear
 sudo ./init.sh
