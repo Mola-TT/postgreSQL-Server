@@ -150,6 +150,30 @@ run_tests() {
     fi
 }
 
+# Setup hardware change detection service
+setup_hardware_change_detection() {
+  log_info "Setting up hardware change detection service..."
+  if [ -f "$SETUP_DIR/hardware_change_detector.sh" ]; then
+    log_info "Executing hardware_change_detector.sh..."
+    bash "$SETUP_DIR/hardware_change_detector.sh"
+  else
+    log_error "hardware_change_detector.sh not found at $SETUP_DIR/hardware_change_detector.sh"
+    return 1
+  fi
+}
+
+# Setup backup configuration
+setup_backup_configuration() {
+  log_info "Setting up PostgreSQL backup configuration..."
+  if [ -f "$SETUP_DIR/backup_config.sh" ]; then
+    log_info "Executing backup_config.sh..."
+    bash "$SETUP_DIR/backup_config.sh"
+  else
+    log_error "backup_config.sh not found at $SETUP_DIR/backup_config.sh"
+    return 1
+  fi
+}
+
 # Main function
 main() {
     display_banner
@@ -232,14 +256,11 @@ main() {
         log_info "Dynamic optimization disabled (set ENABLE_DYNAMIC_OPTIMIZATION=true to enable)"
     fi
     
-    # Setup hardware change detector
-    if [ "${ENABLE_HARDWARE_CHANGE_DETECTOR:-true}" = true ]; then
-        log_info "Setting up hardware change detection service..."
-        # Execute hardware_change_detector.sh with --install argument
-        execute_script "$SCRIPT_DIR/setup/hardware_change_detector.sh" "--install" "hw_detector_success"
-    else
-        log_info "Hardware change detector disabled (set ENABLE_HARDWARE_CHANGE_DETECTOR=true to enable)"
-    fi
+    # Setup hardware change detection
+    setup_hardware_change_detection
+    
+    # Setup backup configuration
+    setup_backup_configuration
     
     # Print setup summary
     log_info "-----------------------------------------------"

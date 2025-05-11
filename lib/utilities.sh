@@ -284,10 +284,20 @@ install_package_with_retry() {
   fi
 }
 
+# Check if pgBackRest is installed
+is_pgbackrest_installed() {
+  if command -v pgbackrest >/dev/null 2>&1; then
+    return 0
+  else
+    return 1
+  fi
+}
+
 # Export functions
 export -f execute_silently
 export -f clear_logs
 export -f command_exists
 export -f apt_install_with_retry
 export -f apt_update_with_retry
-export -f install_package_with_retry 
+export -f install_package_with_retry
+export -f is_pgbackrest_installed 

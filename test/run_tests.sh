@@ -39,6 +39,7 @@ run_all_tests() {
         "$TEST_DIR/test_ssl_renewal.sh"
         "$TEST_DIR/test_dynamic_optimization.sh"
         "$TEST_DIR/test_email_notification.sh"
+        "$TEST_DIR/test_backup.sh"
     )
     
     for test_script in "${ordered_tests[@]}"; do
