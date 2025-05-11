@@ -24,7 +24,7 @@ PREVIOUS_SPECS_FILE="/var/lib/postgresql/previous_hardware_specs.json"
 # Create directory if it doesn't exist
 create_specs_directory() {
   if [ ! -d "$(dirname "$HARDWARE_SPECS_FILE")" ]; then
-    log_info "Creating directory for hardware specs..."
+    log_info "Creating directory for hardware specs..." >&2
     mkdir -p "$(dirname "$HARDWARE_SPECS_FILE")" 2>/dev/null || true
     chown postgres:postgres "$(dirname "$HARDWARE_SPECS_FILE")" 2>/dev/null || true
   fi
@@ -32,7 +32,7 @@ create_specs_directory() {
 
 # Collect current hardware specifications
 collect_hardware_specs() {
-  log_info "Collecting current hardware specifications..."
+  log_info "Collecting current hardware specifications..." >&2
   
   # CPU Cores
   local cpu_cores
@@ -105,16 +105,16 @@ EOF
   chown postgres:postgres "$HARDWARE_SPECS_FILE" 2>/dev/null || true
   chmod 644 "$HARDWARE_SPECS_FILE" 2>/dev/null || true
   
-  log_info "Hardware specifications collected and saved to $HARDWARE_SPECS_FILE"
+  log_info "Hardware specifications collected and saved to $HARDWARE_SPECS_FILE" >&2
 }
 
 # Compare current hardware with previous specifications
 compare_hardware_specs() {
-  log_info "Comparing hardware specifications with previous state..."
+  log_info "Comparing hardware specifications with previous state..." >&2
   
   # Check if previous specs file exists
   if [ ! -f "$PREVIOUS_SPECS_FILE" ]; then
-    log_info "No previous hardware specifications found. This might be the first run."
+    log_info "No previous hardware specifications found. This might be the first run." >&2
     return 0
   fi
   
@@ -162,13 +162,13 @@ compare_hardware_specs() {
   
   # Determine if significant changes occurred (±10% threshold)
   if [ "${cpu_change#-}" -ge 10 ] || [ "${memory_change#-}" -ge 10 ] || [ "${disk_change#-}" -ge 10 ]; then
-    log_info "Significant hardware changes detected:"
-    log_info "CPU Cores: $previous_cpu_cores → $current_cpu_cores (${cpu_change}% change)"
-    log_info "Memory: $previous_memory_mb MB → $current_memory_mb MB (${memory_change}% change)"
-    log_info "Disk Size: $previous_disk_gb GB → $current_disk_gb GB (${disk_change}% change)"
+    log_info "Significant hardware changes detected:" >&2
+    log_info "CPU Cores: $previous_cpu_cores → $current_cpu_cores (${cpu_change}% change)" >&2
+    log_info "Memory: $previous_memory_mb MB → $current_memory_mb MB (${memory_change}% change)" >&2
+    log_info "Disk Size: $previous_disk_gb GB → $current_disk_gb GB (${disk_change}% change)" >&2
     return 0
   else
-    log_info "No significant hardware changes detected."
+    log_info "No significant hardware changes detected." >&2
     return 1
   fi
 }

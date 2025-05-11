@@ -25,7 +25,7 @@ FULL_MODE=false
 
 # Hardware detection functions
 detect_cpu_cores() {
-  log_info "Detecting CPU cores..."
+  log_info "Detecting CPU cores..." >&2
   local cpu_cores
   
   # Try to get the number of CPU cores using nproc
@@ -38,16 +38,16 @@ detect_cpu_cores() {
   
   # If both methods failed, default to 2 cores
   if [ -z "$cpu_cores" ] || [ "$cpu_cores" -lt 1 ]; then
-    log_warn "Could not detect CPU cores, defaulting to 2"
+    log_warn "Could not detect CPU cores, defaulting to 2" >&2
     cpu_cores=2
   fi
   
-  log_info "Detected $cpu_cores CPU cores"
+  log_info "Detected $cpu_cores CPU cores" >&2
   echo "$cpu_cores"
 }
 
 detect_total_memory() {
-  log_info "Detecting total system memory..."
+  log_info "Detecting total system memory..." >&2
   local total_memory_kb
   local total_memory_mb
   
@@ -63,16 +63,16 @@ detect_total_memory() {
   
   # If both methods failed, default to 4GB
   if [ -z "$total_memory_mb" ] || [ "$total_memory_mb" -lt 1 ]; then
-    log_warn "Could not detect total memory, defaulting to 4096 MB"
+    log_warn "Could not detect total memory, defaulting to 4096 MB" >&2
     total_memory_mb=4096
   fi
   
-  log_info "Detected $total_memory_mb MB of system memory"
+  log_info "Detected $total_memory_mb MB of system memory" >&2
   echo "$total_memory_mb"
 }
 
 detect_disk_size() {
-  log_info "Detecting disk size..."
+  log_info "Detecting disk size..." >&2
   local data_directory
   local disk_size_kb
   local disk_size_gb
@@ -82,7 +82,7 @@ detect_disk_size() {
   
   # If data_directory is not found, use default
   if [ -z "$data_directory" ]; then
-    log_warn "Could not detect PostgreSQL data directory, using current disk"
+    log_warn "Could not detect PostgreSQL data directory, using current disk" >&2
     data_directory="/"
   fi
   
@@ -92,11 +92,11 @@ detect_disk_size() {
   
   # If detection failed, default to 50GB
   if [ -z "$disk_size_gb" ] || [ "$disk_size_gb" -lt 1 ]; then
-    log_warn "Could not detect disk size, defaulting to 50 GB"
+    log_warn "Could not detect disk size, defaulting to 50 GB" >&2
     disk_size_gb=50
   fi
   
-  log_info "Detected $disk_size_gb GB disk size for PostgreSQL data"
+  log_info "Detected $disk_size_gb GB disk size for PostgreSQL data" >&2
   echo "$disk_size_gb"
 }
 
@@ -105,7 +105,7 @@ calculate_shared_buffers() {
   local total_memory_mb=$1
   local shared_buffers_mb
   
-  log_info "Calculating optimal shared_buffers..."
+  log_info "Calculating optimal shared_buffers..." >&2
   
   # Calculate shared_buffers based on total memory
   # Use 25% of RAM, but not more than 8GB
@@ -121,7 +121,7 @@ calculate_shared_buffers() {
     shared_buffers_mb=128
   fi
   
-  log_info "Calculated shared_buffers: $shared_buffers_mb MB"
+  log_info "Calculated shared_buffers: $shared_buffers_mb MB" >&2
   echo "$shared_buffers_mb"
 }
 
@@ -131,7 +131,7 @@ calculate_work_mem() {
   local cpu_cores=$3
   local work_mem_mb
   
-  log_info "Calculating optimal work_mem..."
+  log_info "Calculating optimal work_mem..." >&2
   
   # Calculate work_mem based on available memory and max connections
   # Use 5% of RAM divided by max_connections * cpu_cores
@@ -148,7 +148,7 @@ calculate_work_mem() {
     work_mem_mb=64
   fi
   
-  log_info "Calculated work_mem: $work_mem_mb MB"
+  log_info "Calculated work_mem: $work_mem_mb MB" >&2
   echo "$work_mem_mb"
 }
 
@@ -156,13 +156,13 @@ calculate_effective_cache_size() {
   local total_memory_mb=$1
   local effective_cache_size_mb
   
-  log_info "Calculating optimal effective_cache_size..."
+  log_info "Calculating optimal effective_cache_size..." >&2
   
   # Calculate effective_cache_size based on total memory
   # Use 75% of RAM
   effective_cache_size_mb=$((total_memory_mb * 75 / 100))
   
-  log_info "Calculated effective_cache_size: $effective_cache_size_mb MB"
+  log_info "Calculated effective_cache_size: $effective_cache_size_mb MB" >&2
   echo "$effective_cache_size_mb"
 }
 
@@ -171,7 +171,7 @@ calculate_max_connections() {
   local cpu_cores=$2
   local max_connections
   
-  log_info "Calculating optimal max_connections..."
+  log_info "Calculating optimal max_connections..." >&2
   
   # Calculate max_connections based on available memory and CPU cores
   # Use 50 connections per GB of RAM, plus 50 per CPU core
@@ -187,7 +187,7 @@ calculate_max_connections() {
     max_connections=1000
   fi
   
-  log_info "Calculated max_connections: $max_connections"
+  log_info "Calculated max_connections: $max_connections" >&2
   echo "$max_connections"
 }
 
@@ -196,7 +196,7 @@ calculate_pgb_default_pool_size() {
   local cpu_cores=$1
   local pool_size
   
-  log_info "Calculating optimal pgbouncer default_pool_size..."
+  log_info "Calculating optimal pgbouncer default_pool_size..." >&2
   
   # Calculate default_pool_size based on CPU cores
   # Use 2x CPU cores as a starting point
@@ -212,7 +212,7 @@ calculate_pgb_default_pool_size() {
     pool_size=50
   fi
   
-  log_info "Calculated pgbouncer default_pool_size: $pool_size"
+  log_info "Calculated pgbouncer default_pool_size: $pool_size" >&2
   echo "$pool_size"
 }
 
@@ -222,7 +222,7 @@ calculate_pgb_max_client_conn() {
   local total_memory_mb=$3
   local max_client_conn
   
-  log_info "Calculating optimal pgbouncer max_client_conn..."
+  log_info "Calculating optimal pgbouncer max_client_conn..." >&2
   
   # Calculate max_client_conn based on PostgreSQL max_connections, CPU cores and memory
   # For systems with ample resources, allow more connections through pgbouncer
@@ -242,7 +242,7 @@ calculate_pgb_max_client_conn() {
     max_client_conn=2000
   fi
   
-  log_info "Calculated pgbouncer max_client_conn: $max_client_conn"
+  log_info "Calculated pgbouncer max_client_conn: $max_client_conn" >&2
   echo "$max_client_conn"
 }
 
@@ -250,7 +250,7 @@ calculate_pgb_reserve_pool_size() {
   local default_pool_size=$1
   local reserve_pool_size
   
-  log_info "Calculating optimal pgbouncer reserve_pool_size..."
+  log_info "Calculating optimal pgbouncer reserve_pool_size..." >&2
   
   # Calculate reserve_pool_size as a percentage of default_pool_size
   # Typically 10-20% of default_pool_size is a good starting point
@@ -261,7 +261,7 @@ calculate_pgb_reserve_pool_size() {
     reserve_pool_size=2
   fi
   
-  log_info "Calculated pgbouncer reserve_pool_size: $reserve_pool_size"
+  log_info "Calculated pgbouncer reserve_pool_size: $reserve_pool_size" >&2
   echo "$reserve_pool_size"
 }
 
@@ -270,7 +270,7 @@ determine_pool_mode() {
   local total_memory_mb=$2
   local pool_mode
   
-  log_info "Determining optimal pgbouncer pool_mode..."
+  log_info "Determining optimal pgbouncer pool_mode..." >&2
   
   # For systems with limited resources, session pooling might be more efficient
   # For systems with ample resources, transaction pooling is usually better
@@ -281,16 +281,16 @@ determine_pool_mode() {
   # For very resource-constrained systems, use session mode
   if [ "$cpu_cores" -lt 2 ] && [ "$total_memory_mb" -lt 2048 ]; then
     pool_mode="session"
-    log_info "Resource-constrained system detected, using session pool mode"
+    log_info "Resource-constrained system detected, using session pool mode" >&2
   fi
   
-  log_info "Determined pgbouncer pool_mode: $pool_mode"
+  log_info "Determined pgbouncer pool_mode: $pool_mode" >&2
   echo "$pool_mode"
 }
 
 # Main PostgreSQL optimization function
 optimize_postgresql() {
-  log_info "Optimizing PostgreSQL configuration based on hardware..."
+  log_info "Optimizing PostgreSQL configuration based on hardware..." >&2
   
   # Detect hardware specifications
   local cpu_cores=$(detect_cpu_cores)
@@ -306,7 +306,7 @@ optimize_postgresql() {
   # Create configuration file
   local config_file="/etc/postgresql/$(pg_lsclusters | grep -v Cluster | awk '{print $1}')/main/conf.d/90-dynamic-optimization.conf"
   
-  log_info "Writing optimized PostgreSQL configuration to $config_file..."
+  log_info "Writing optimized PostgreSQL configuration to $config_file..." >&2
   
   # Create directory if it doesn't exist
   mkdir -p "$(dirname "$config_file")" 2>/dev/null || true
@@ -314,7 +314,7 @@ optimize_postgresql() {
   # Backup existing configuration if it exists
   if [ -f "$config_file" ]; then
     cp "$config_file" "${config_file}.bak.$(date +%Y%m%d%H%M%S)"
-    log_info "Backed up existing configuration"
+    log_info "Backed up existing configuration" >&2
   fi
   
   # Write configuration
@@ -348,25 +348,25 @@ optimize_postgresql() {
     echo "autovacuum_analyze_scale_factor = 0.05"
   } > "$config_file"
   
-  log_info "PostgreSQL configuration optimized successfully"
+  log_info "PostgreSQL configuration optimized successfully" >&2
   
   # Reload PostgreSQL to apply changes if not in minimal mode
   if [ "$MINIMAL_MODE" = "false" ]; then
     if systemctl is-active --quiet postgresql; then
-      log_info "Reloading PostgreSQL configuration..."
+      log_info "Reloading PostgreSQL configuration..." >&2
       systemctl reload postgresql > /dev/null 2>&1
-      log_info "PostgreSQL configuration reloaded successfully"
+      log_info "PostgreSQL configuration reloaded successfully" >&2
     else
-      log_warn "PostgreSQL service is not running, skipping reload"
+      log_warn "PostgreSQL service is not running, skipping reload" >&2
     fi
   else
-    log_info "Running in minimal mode, skipping PostgreSQL reload"
+    log_info "Running in minimal mode, skipping PostgreSQL reload" >&2
   fi
 }
 
 # Main pgbouncer optimization function
 optimize_pgbouncer() {
-  log_info "Optimizing pgbouncer configuration based on hardware..."
+  log_info "Optimizing pgbouncer configuration based on hardware..." >&2
   
   # Detect hardware specifications
   local cpu_cores=$(detect_cpu_cores)
@@ -378,7 +378,7 @@ optimize_pgbouncer() {
   
   # If we couldn't get max_connections from PostgreSQL, calculate it
   if [ -z "$pg_max_connections" ] || ! [[ "$pg_max_connections" =~ ^[0-9]+$ ]]; then
-    log_warn "Could not get max_connections from PostgreSQL, calculating based on hardware..."
+    log_warn "Could not get max_connections from PostgreSQL, calculating based on hardware..." >&2
     pg_max_connections=$(calculate_max_connections "$total_memory_mb" "$cpu_cores")
   fi
   
@@ -392,13 +392,13 @@ optimize_pgbouncer() {
   local pgb_conf="/etc/pgbouncer/pgbouncer.ini"
   
   if [ ! -f "$pgb_conf" ]; then
-    log_error "pgbouncer configuration file not found: $pgb_conf"
+    log_error "pgbouncer configuration file not found: $pgb_conf" >&2
     return 1
   fi
   
   # Backup existing configuration
   cp "$pgb_conf" "${pgb_conf}.bak.$(date +%Y%m%d%H%M%S)"
-  log_info "Backed up existing pgbouncer configuration"
+  log_info "Backed up existing pgbouncer configuration" >&2
   
   # Create temporary file for the new configuration
   local temp_conf=$(mktemp)
@@ -450,25 +450,25 @@ optimize_pgbouncer() {
   chown postgres:postgres "$pgb_conf"
   chmod 640 "$pgb_conf"
   
-  log_info "pgbouncer configuration optimized successfully"
+  log_info "pgbouncer configuration optimized successfully" >&2
   
   # Restart pgbouncer to apply changes if not in minimal mode
   if [ "$MINIMAL_MODE" = "false" ]; then
     if systemctl is-active --quiet pgbouncer; then
-      log_info "Restarting pgbouncer to apply configuration..."
+      log_info "Restarting pgbouncer to apply configuration..." >&2
       systemctl restart pgbouncer > /dev/null 2>&1
-      log_info "pgbouncer restarted successfully"
+      log_info "pgbouncer restarted successfully" >&2
     else
-      log_warn "pgbouncer service is not running, skipping restart"
+      log_warn "pgbouncer service is not running, skipping restart" >&2
     fi
   else
-    log_info "Running in minimal mode, skipping pgbouncer restart"
+    log_info "Running in minimal mode, skipping pgbouncer restart" >&2
   fi
 }
 
 # Generate optimization report
 generate_optimization_report() {
-  log_info "Generating optimization report..."
+  log_info "Generating optimization report..." >&2
   
   # Detect hardware specifications
   local cpu_cores=$(detect_cpu_cores)
@@ -550,7 +550,7 @@ generate_optimization_report() {
   # Set proper permissions
   chown postgres:postgres "$report_dir" "$report_file" 2>/dev/null || true
   
-  log_info "Optimization report generated: $report_file"
+  log_info "Optimization report generated: $report_file" >&2
   
   # Return the report file path
   echo "$report_file"
@@ -558,25 +558,25 @@ generate_optimization_report() {
 
 # Main function to run optimization
 main() {
-  log_info "Starting dynamic optimization of PostgreSQL and pgbouncer..."
+  log_info "Starting dynamic optimization of PostgreSQL and pgbouncer..." >&2
   
   # Process command line arguments
   for arg in "$@"; do
     case $arg in
       --minimal)
         MINIMAL_MODE=true
-        log_info "Running in minimal mode: will only apply changes that don't require a restart"
+        log_info "Running in minimal mode: will only apply changes that don't require a restart" >&2
         ;;
       --full)
         FULL_MODE=true
-        log_info "Running in full mode: will apply all optimizations and restart services if needed"
+        log_info "Running in full mode: will apply all optimizations and restart services if needed" >&2
         ;;
     esac
   done
   
   # Check if PostgreSQL is installed
   if ! command -v psql >/dev/null 2>&1; then
-    log_error "PostgreSQL is not installed, aborting optimization"
+    log_error "PostgreSQL is not installed, aborting optimization" >&2
     exit 1
   fi
   
@@ -588,14 +588,14 @@ main() {
     # Optimize pgbouncer
     optimize_pgbouncer
   else
-    log_warn "pgbouncer is not installed, skipping pgbouncer optimization"
+    log_warn "pgbouncer is not installed, skipping pgbouncer optimization" >&2
   fi
   
   # Generate optimization report
   local report_file=$(generate_optimization_report)
   
-  log_info "Dynamic optimization completed successfully"
-  log_info "Optimization report available at: $report_file"
+  log_info "Dynamic optimization completed successfully" >&2
+  log_info "Optimization report available at: $report_file" >&2
 }
 
 # If script is run directly, execute main function

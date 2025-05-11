@@ -33,7 +33,7 @@ test_hardware_detection() {
   log_info "Testing CPU cores detection..."
   local cpu_cores=$(detect_cpu_cores)
   
-  if [ -n "$cpu_cores" ] && [ "$cpu_cores" -gt 0 ]; then
+  if [[ "$cpu_cores" =~ ^[0-9]+$ ]] && [ "$cpu_cores" -gt 0 ]; then
     log_pass "Detected $cpu_cores CPU cores"
   else
     log_error "CPU cores detection failed"
@@ -44,7 +44,7 @@ test_hardware_detection() {
   log_info "Testing memory detection..."
   local total_memory_mb=$(detect_total_memory)
   
-  if [ -n "$total_memory_mb" ] && [ "$total_memory_mb" -gt 0 ]; then
+  if [[ "$total_memory_mb" =~ ^[0-9]+$ ]] && [ "$total_memory_mb" -gt 0 ]; then
     log_pass "Detected $total_memory_mb MB of memory"
   else
     log_error "Memory detection failed"
@@ -55,7 +55,7 @@ test_hardware_detection() {
   log_info "Testing disk size detection..."
   local disk_size_gb=$(detect_disk_size)
   
-  if [ -n "$disk_size_gb" ] && [ "$disk_size_gb" -gt 0 ]; then
+  if [[ "$disk_size_gb" =~ ^[0-9]+$ ]] && [ "$disk_size_gb" -gt 0 ]; then
     log_pass "Detected $disk_size_gb GB of disk space"
   else
     log_error "Disk size detection failed"
