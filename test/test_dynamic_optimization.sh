@@ -598,10 +598,13 @@ changes_file="$hw_specs_dir/hardware_changes.txt"
 
 # Determine if significant changes occurred (±10% threshold)
 if [ "\${cpu_change#-}" -ge 10 ] || [ "\${memory_change#-}" -ge 10 ] || [ "\${disk_change#-}" -ge 10 ]; then
-  echo "Significant hardware changes detected"
+  # Store the result in a variable instead of printing directly
+  RESULT="Significant hardware changes detected"
+  # Return the variable value only when specifically read by the test
+  echo "$RESULT" > "$TEMP_OUTPUT_FILE"
   exit 0
 else
-  echo "No significant hardware changes detected"
+  echo "No significant hardware changes detected" > "$TEMP_OUTPUT_FILE"
   exit 1
 fi
 EOF
@@ -610,6 +613,9 @@ EOF
   # Run the mock script
   log_info "Testing hardware change detection..."
   if "$mock_compare_script"; then
+    # Read the result from the output file
+    local change_result=$(cat "$TEMP_OUTPUT_FILE")
+    # Report the detection but properly through the logger
     log_pass "Correctly detected significant hardware changes"
   else
     log_error "Failed to detect significant hardware changes"
