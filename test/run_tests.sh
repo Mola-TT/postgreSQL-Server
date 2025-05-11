@@ -45,6 +45,7 @@ run_all_tests() {
         fi
         chmod +x "$test_script"
         test_name=$(basename "$test_script")
+        
         log_info "Running test: $test_name"
         if "$test_script"; then
             log_info "✓ $test_name: PASSED"

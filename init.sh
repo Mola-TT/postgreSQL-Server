@@ -184,7 +184,8 @@ main() {
     
     log_info "-----------------------------------------------"
     
-    log_info "Initialization complete"
+    log_info "Initialization COMPLETE"
+    echo ""
     
     # Run tests if enabled
     if [ "${RUN_TESTS:-false}" = true ]; then
