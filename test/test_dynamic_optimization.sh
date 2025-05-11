@@ -42,8 +42,11 @@ test_hardware_detection() {
   
   # Test CPU cores detection
   log_info "Testing CPU cores detection..."
-  # Redirect function logging to temporary file to avoid duplicate logs
-  local cpu_cores=$(detect_cpu_cores > "$TEMP_LOG_FILE" 2>&1)
+  
+  # Use a separate function call to capture the output while redirecting logs
+  local cpu_cores
+  # Redirect stderr to the temp log file but keep stdout for the variable assignment
+  cpu_cores=$(detect_cpu_cores 2> "$TEMP_LOG_FILE")
   
   if [[ "$cpu_cores" =~ ^[0-9]+$ ]] && [ "$cpu_cores" -gt 0 ]; then
     log_pass "Detected $cpu_cores CPU cores"
@@ -55,7 +58,9 @@ test_hardware_detection() {
   
   # Test memory detection
   log_info "Testing memory detection..."
-  local total_memory_mb=$(detect_total_memory > "$TEMP_LOG_FILE" 2>&1)
+  local total_memory_mb
+  # Redirect stderr to the temp log file but keep stdout for the variable assignment
+  total_memory_mb=$(detect_total_memory 2> "$TEMP_LOG_FILE")
   
   if [[ "$total_memory_mb" =~ ^[0-9]+$ ]] && [ "$total_memory_mb" -gt 0 ]; then
     log_pass "Detected $total_memory_mb MB of memory"
@@ -67,7 +72,9 @@ test_hardware_detection() {
   
   # Test disk size detection
   log_info "Testing disk size detection..."
-  local disk_size_gb=$(detect_disk_size > "$TEMP_LOG_FILE" 2>&1)
+  local disk_size_gb
+  # Redirect stderr to the temp log file but keep stdout for the variable assignment
+  disk_size_gb=$(detect_disk_size 2> "$TEMP_LOG_FILE")
   
   if [[ "$disk_size_gb" =~ ^[0-9]+$ ]] && [ "$disk_size_gb" -gt 0 ]; then
     log_pass "Detected $disk_size_gb GB of disk space"
@@ -86,14 +93,15 @@ test_parameter_calculations() {
   source "$SETUP_DIR/dynamic_optimization.sh"
   
   # Get hardware specs for calculations
-  local cpu_cores=$(detect_cpu_cores > "$TEMP_LOG_FILE" 2>&1)
-  local total_memory_mb=$(detect_total_memory > "$TEMP_LOG_FILE" 2>&1)
+  local cpu_cores=$(detect_cpu_cores 2> "$TEMP_LOG_FILE")
+  local total_memory_mb=$(detect_total_memory 2> "$TEMP_LOG_FILE")
   
   # Test PostgreSQL parameter calculations
   log_info "Testing PostgreSQL parameter calculations..."
   
   # Test max_connections calculation
-  local max_connections=$(calculate_max_connections "$total_memory_mb" "$cpu_cores" > "$TEMP_LOG_FILE" 2>&1)
+  local max_connections
+  max_connections=$(calculate_max_connections "$total_memory_mb" "$cpu_cores" 2> "$TEMP_LOG_FILE")
   if [ -n "$max_connections" ] && [ "$max_connections" -gt 0 ]; then
     log_pass "Calculated max_connections: $max_connections"
   else
@@ -103,7 +111,8 @@ test_parameter_calculations() {
   fi
   
   # Test shared_buffers calculation
-  local shared_buffers_mb=$(calculate_shared_buffers "$total_memory_mb" > "$TEMP_LOG_FILE" 2>&1)
+  local shared_buffers_mb
+  shared_buffers_mb=$(calculate_shared_buffers "$total_memory_mb" 2> "$TEMP_LOG_FILE")
   if [ -n "$shared_buffers_mb" ] && [ "$shared_buffers_mb" -gt 0 ]; then
     log_pass "Calculated shared_buffers: $shared_buffers_mb MB"
   else
@@ -113,7 +122,8 @@ test_parameter_calculations() {
   fi
   
   # Test work_mem calculation
-  local work_mem_mb=$(calculate_work_mem "$total_memory_mb" "$max_connections" "$cpu_cores" > "$TEMP_LOG_FILE" 2>&1)
+  local work_mem_mb
+  work_mem_mb=$(calculate_work_mem "$total_memory_mb" "$max_connections" "$cpu_cores" 2> "$TEMP_LOG_FILE")
   if [ -n "$work_mem_mb" ] && [ "$work_mem_mb" -gt 0 ]; then
     log_pass "Calculated work_mem: $work_mem_mb MB"
   else
@@ -123,7 +133,8 @@ test_parameter_calculations() {
   fi
   
   # Test effective_cache_size calculation
-  local effective_cache_size_mb=$(calculate_effective_cache_size "$total_memory_mb" > "$TEMP_LOG_FILE" 2>&1)
+  local effective_cache_size_mb
+  effective_cache_size_mb=$(calculate_effective_cache_size "$total_memory_mb" 2> "$TEMP_LOG_FILE")
   if [ -n "$effective_cache_size_mb" ] && [ "$effective_cache_size_mb" -gt 0 ]; then
     log_pass "Calculated effective_cache_size: $effective_cache_size_mb MB"
   else
@@ -136,7 +147,8 @@ test_parameter_calculations() {
   log_info "Testing pgbouncer parameter calculations..."
   
   # Test default_pool_size calculation
-  local default_pool_size=$(calculate_pgb_default_pool_size "$cpu_cores" > "$TEMP_LOG_FILE" 2>&1)
+  local default_pool_size
+  default_pool_size=$(calculate_pgb_default_pool_size "$cpu_cores" 2> "$TEMP_LOG_FILE")
   if [ -n "$default_pool_size" ] && [ "$default_pool_size" -gt 0 ]; then
     log_pass "Calculated pgbouncer default_pool_size: $default_pool_size"
   else
@@ -146,7 +158,8 @@ test_parameter_calculations() {
   fi
   
   # Test max_client_conn calculation
-  local max_client_conn=$(calculate_pgb_max_client_conn "$max_connections" "$cpu_cores" "$total_memory_mb" > "$TEMP_LOG_FILE" 2>&1)
+  local max_client_conn
+  max_client_conn=$(calculate_pgb_max_client_conn "$max_connections" "$cpu_cores" "$total_memory_mb" 2> "$TEMP_LOG_FILE")
   if [ -n "$max_client_conn" ] && [ "$max_client_conn" -gt 0 ]; then
     log_pass "Calculated pgbouncer max_client_conn: $max_client_conn"
   else
@@ -156,7 +169,8 @@ test_parameter_calculations() {
   fi
   
   # Test reserve_pool_size calculation
-  local reserve_pool_size=$(calculate_pgb_reserve_pool_size "$default_pool_size" > "$TEMP_LOG_FILE" 2>&1)
+  local reserve_pool_size
+  reserve_pool_size=$(calculate_pgb_reserve_pool_size "$default_pool_size" 2> "$TEMP_LOG_FILE")
   if [ -n "$reserve_pool_size" ] && [ "$reserve_pool_size" -gt 0 ]; then
     log_pass "Calculated pgbouncer reserve_pool_size: $reserve_pool_size"
   else
@@ -166,7 +180,8 @@ test_parameter_calculations() {
   fi
   
   # Test pool_mode determination
-  local pool_mode=$(determine_pool_mode "$cpu_cores" "$total_memory_mb" > "$TEMP_LOG_FILE" 2>&1)
+  local pool_mode
+  pool_mode=$(determine_pool_mode "$cpu_cores" "$total_memory_mb" 2> "$TEMP_LOG_FILE")
   if [ -n "$pool_mode" ]; then
     log_pass "Determined pgbouncer pool_mode: $pool_mode"
   else
