@@ -5,9 +5,9 @@ alwaysApply: true
 ---
 # Milestone
 
-## Current Progress: Milestone 5 (Completed)
+## Current Progress: Milestone 6 (In Progress)
 
-## Milestone 6 (Planned)
+## Milestone 6 (In Progress)
 - Create `dynamic_optimization.sh` under setup folder that:
   - Detects hardware specifications (CPU cores, memory, disk size)
   - Dynamically calculates optimal PostgreSQL configuration parameters
