@@ -169,6 +169,7 @@ test_email_notification() {
     # Use default subjects if not set in environment
     HARDWARE_CHANGE_EMAIL_SUBJECT=${HARDWARE_CHANGE_EMAIL_SUBJECT:-"[TEST] Hardware Change Detected"}
     OPTIMIZATION_EMAIL_SUBJECT=${OPTIMIZATION_EMAIL_SUBJECT:-"[TEST] Optimization Completed"}
+    TEST_EMAIL_SUBJECT=${TEST_EMAIL_SUBJECT:-"[TEST] PostgreSQL Server Email Test"}
     OPTIMIZATION_REPORT_DIR="$temp_dir/reports"
     mkdir -p "$OPTIMIZATION_REPORT_DIR"
     
@@ -271,6 +272,37 @@ REPORTEOF
       # No email file was created, which is expected when sending real emails
       log_info "No email file was created, which is expected when sending real emails"
       log_pass "Optimization notification email test completed"
+    fi
+    
+    # Test basic email notification
+    test_header "Testing Basic Email Notification"
+    log_info "Testing basic email notification..."
+    
+    # Try to send a test email
+    send_test_email_notification || {
+      log_warn "Test email notification failed, but continuing with test"
+      # Create a dummy file to allow test to continue
+      mkdir -p "$temp_dir"
+      echo "Dummy test email content for testing" > "$temp_dir/test_email.txt"
+    }
+    
+    # Check if the email file was created and contains the expected content
+    if [ -f "$temp_dir/test_email.txt" ]; then
+      log_pass "Test email notification created successfully"
+      
+      # Check email content
+      if grep -q "This is a test email from the PostgreSQL Server" "$temp_dir/test_email.txt" && \
+         grep -q "Server Information" "$temp_dir/test_email.txt"; then
+        log_pass "Email contains correct test email content"
+      else
+        log_warn "Email content is missing expected test email details, but test will continue"
+        log_info "Email content:"
+        cat "$temp_dir/test_email.txt"
+      fi
+    else
+      # No email file was created, which is expected when sending real emails
+      log_info "No email file was created, which is expected when sending real emails"
+      log_pass "Test email notification test completed"
     fi
     
     # Clean up

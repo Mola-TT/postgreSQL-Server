@@ -27,6 +27,7 @@ HARDWARE_CHANGE_EMAIL_RECIPIENT=${HARDWARE_CHANGE_EMAIL_RECIPIENT:-${EMAIL_RECIP
 HARDWARE_CHANGE_EMAIL_SENDER=${HARDWARE_CHANGE_EMAIL_SENDER:-${EMAIL_SENDER:-"postgres@$(hostname -f)"}}
 HARDWARE_CHANGE_EMAIL_SUBJECT=${HARDWARE_CHANGE_EMAIL_SUBJECT:-"[ALERT] Hardware Change Detected on PostgreSQL Server"}
 OPTIMIZATION_EMAIL_SUBJECT=${OPTIMIZATION_EMAIL_SUBJECT:-"PostgreSQL Server Optimization Completed"}
+TEST_EMAIL_SUBJECT=${TEST_EMAIL_SUBJECT:-"[TEST] PostgreSQL Server Email Test"}
 # Support both new variable names and legacy Netdata variable names for backward compatibility
 SMTP_SERVER=${SMTP_SERVER:-${NETDATA_SMTP_SERVER:-"localhost"}}
 SMTP_PORT=${SMTP_PORT:-${NETDATA_SMTP_PORT:-25}}
@@ -199,6 +200,24 @@ Please monitor system performance and review the changes if necessary.
 "
 
   send_email_notification "$OPTIMIZATION_EMAIL_SUBJECT" "$message"
+}
+
+# Function to send test email notification
+send_test_email_notification() {
+  local message="This is a test email from the PostgreSQL Server.
+
+This email confirms that the email notification system is working correctly.
+
+Server Information:
+-----------------
+Hostname: $(hostname -f)
+Date: $(date)
+IP Address: $(hostname -I | awk '{print $1}')
+
+If you received this email, it means the email configuration is correct.
+"
+
+  send_email_notification "$TEST_EMAIL_SUBJECT" "$message"
 }
 
 # Create directory if it doesn't exist
