@@ -35,6 +35,7 @@ source "$SCRIPT_DIR/setup/ssl_renewal.sh"
 
 # Note: Dynamic optimization and hardware change detector scripts are executed directly 
 # in the main function, not sourced at the top level to avoid function name conflicts
+# These scripts have overlapping function names for hardware detection and should not be sourced together
 
 # Display init banner
 display_banner() {
@@ -54,7 +55,7 @@ execute_script() {
     # Check if script exists
     if [ ! -f "$script_path" ]; then
         # Try to find the script in other common locations
-        for possible_path in "/root/postgreSQL-Server/setup/$script_name" "/home/*/postgreSQL-Server/setup/$script_name"; do
+        for possible_path in "/root/postgreSQL-Server/setup/$script_name" "/home/*/postgreSQL-Server/setup/$script_name" "$SCRIPT_DIR/setup/$script_name" "$(dirname "$SCRIPT_DIR")/setup/$script_name"; do
             if [ -f "$possible_path" ]; then
                 script_path="$possible_path"
                 log_info "Found script at: $script_path"
@@ -63,8 +64,33 @@ execute_script() {
         done
     fi
     
+    # Check again if we found the script
+    if [ ! -f "$script_path" ]; then
+        log_error "Could not find script: $script_name. Checked common locations."
+        if [ -n "$success_var" ]; then
+            eval "$success_var=false"
+        fi
+        return 1
+    fi
+    
     # Ensure script has execute permission
-    chmod +x "$script_path" 2>/dev/null || log_warn "Failed to set executable permission on $script_name"
+    chmod +x "$script_path" 2>/dev/null
+    if [ $? -ne 0 ]; then
+        log_warn "Failed to set executable permission on $script_name. Will try with bash explicitly."
+        # Try to execute with bash explicitly if we can't set execute permission
+        if bash "$script_path" $script_args; then
+            if [ -n "$success_var" ]; then
+                eval "$success_var=true"
+            fi
+            return 0
+        else
+            log_error "$script_name encountered issues, but continuing with other setup steps"
+            if [ -n "$success_var" ]; then
+                eval "$success_var=false"
+            fi
+            return 1
+        fi
+    fi
     
     # Execute the script
     log_info "Executing $script_name..."
@@ -76,6 +102,9 @@ execute_script() {
         return 0
     else
         log_error "$script_name encountered issues, but continuing with other setup steps"
+        if [ -n "$success_var" ]; then
+            eval "$success_var=false"
+        fi
         return 1
     fi
 }
