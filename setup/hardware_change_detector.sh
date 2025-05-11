@@ -71,7 +71,26 @@ EOF
   if command -v msmtp >/dev/null 2>&1; then
     # Use msmtp if available (preferred method)
     log_info "Using msmtp to send email..."
-    cat "$email_file" | msmtp -a default "$recipient" > /dev/null 2>&1
+    # Create a temporary log file for msmtp output
+    local msmtp_log=$(mktemp)
+    cat "$email_file" | msmtp -a default "$recipient" > "$msmtp_log" 2>&1
+    local status=$?
+    
+    # Log debug information if verbose logging is enabled
+    if [ "$LOG_LEVEL" = "DEBUG" ]; then
+      log_debug "msmtp output:"
+      cat "$msmtp_log" | while read line; do
+        log_debug "msmtp: $line"
+      done
+    fi
+    
+    # Clean up
+    rm -f "$msmtp_log" 2>/dev/null || true
+    
+    if [ $status -ne 0 ]; then
+      log_warn "msmtp failed to send email (exit code: $status)"
+      return $status
+    fi
   elif command -v mailx >/dev/null 2>&1; then
     # Use mailx if available
     if [ -n "$SMTP_USERNAME" ] && [ -n "$SMTP_PASSWORD" ]; then

@@ -104,9 +104,23 @@ EOF
   
   # Test msmtp configuration
   log_info "Testing msmtp configuration..."
-  echo "This is a test email from msmtp" | msmtp -a default --debug $EMAIL_RECIPIENT || {
+  # Redirect all output to a temporary file to avoid cluttering the test output
+  local msmtp_test_log=$(mktemp)
+  echo "This is a test email from msmtp" | msmtp -a default --debug $EMAIL_RECIPIENT > "$msmtp_test_log" 2>&1 || {
     log_warn "msmtp test failed. Email sending may not work correctly."
+    log_info "msmtp test output (last 10 lines):"
+    tail -10 "$msmtp_test_log" | while read line; do
+      log_info "msmtp: $line"
+    done
   }
+  
+  # Check if the test was successful
+  if grep -q "250 OK" "$msmtp_test_log"; then
+    log_info "msmtp test email sent successfully"
+  fi
+  
+  # Clean up
+  rm -f "$msmtp_test_log" 2>/dev/null || true
   
   log_info "Email tools installation completed."
   return 0
