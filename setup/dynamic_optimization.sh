@@ -77,37 +77,72 @@ detect_disk_size() {
   local disk_size_kb
   local disk_size_gb
   
-  # Get PostgreSQL data directory
-  data_directory=$(su - postgres -c "psql -t -c \"SHOW data_directory;\"" 2>/dev/null | grep -v '^$' | tr -d ' ')
+  # Try multiple methods to get PostgreSQL data directory
+  # Method 1: Direct psql query (most accurate)
+  if command -v psql >/dev/null 2>&1; then
+    data_directory=$(su - postgres -c "psql -t -c \"SHOW data_directory;\"" 2>/dev/null | grep -v '^$' | tr -d ' ' || echo "")
+  fi
   
-  # If data_directory is not found or empty, try common locations
+  # Method 2: Check common locations if Method 1 failed
   if [ -z "$data_directory" ] || [ ! -d "$data_directory" ]; then
-    log_info "PostgreSQL data directory not found or not accessible, trying common locations..." >&2
+    log_info "PostgreSQL data directory not found via psql, trying common locations..." >&2
     
     # Try common PostgreSQL data directory locations
-    for possible_dir in "/var/lib/postgresql/14/main" "/var/lib/postgresql/15/main" "/var/lib/postgresql/16/main" "/var/lib/postgresql/13/main"; do
+    for possible_dir in "/var/lib/postgresql/14/main" "/var/lib/postgresql/15/main" "/var/lib/postgresql/16/main" "/var/lib/postgresql/13/main" "/var/lib/postgresql/12/main" "/var/lib/postgresql/11/main" "/var/lib/postgresql/10/main" "/var/lib/postgresql/9.6/main"; do
       if [ -d "$possible_dir" ]; then
         data_directory="$possible_dir"
         log_info "Found PostgreSQL data directory at: $data_directory" >&2
         break
       fi
     done
+  fi
+  
+  # Method 3: Try to find the postgresql.conf file and extract its directory
+  if [ -z "$data_directory" ] || [ ! -d "$data_directory" ]; then
+    log_info "Trying to find postgresql.conf file..." >&2
+    local conf_file
     
-    # If still not found, use root filesystem
-    if [ -z "$data_directory" ] || [ ! -d "$data_directory" ]; then
-      log_warn "Could not detect PostgreSQL data directory, using root filesystem" >&2
-      data_directory="/"
+    for possible_conf in /etc/postgresql/*/main/postgresql.conf; do
+      if [ -f "$possible_conf" ]; then
+        conf_file="$possible_conf"
+        break
+      fi
+    done
+    
+    if [ -n "$conf_file" ]; then
+      # Try to extract data_directory from config file
+      data_directory=$(grep "^data_directory" "$conf_file" 2>/dev/null | sed "s/.*[=][']\(.*\)['].*$/\1/" || echo "")
+      if [ -n "$data_directory" ] && [ -d "$data_directory" ]; then
+        log_info "Found PostgreSQL data directory from config: $data_directory" >&2
+      fi
     fi
   fi
   
-  # Get disk size
-  disk_size_kb=$(df -k "$data_directory" 2>/dev/null | awk 'NR==2 {print $2}')
+  # Method 4: Use PostgreSQL directory if data directory wasn't found
+  if [ -z "$data_directory" ] || [ ! -d "$data_directory" ]; then
+    # If no specific data directory found, use the general PostgreSQL directory
+    if [ -d "/var/lib/postgresql" ]; then
+      data_directory="/var/lib/postgresql"
+      log_warn "Could not detect specific PostgreSQL data directory, using: $data_directory" >&2
+    else
+      # Fallback to root filesystem as last resort
+      data_directory="/"
+      log_warn "Could not detect PostgreSQL data directory, using root filesystem" >&2
+    fi
+  fi
   
-  # If df command failed, try with the parent directory
-  if [ -z "$disk_size_kb" ] || [ "$disk_size_kb" -lt 1 ]; then
-    parent_dir=$(dirname "$data_directory")
-    log_warn "Failed to get disk size for $data_directory, trying parent directory: $parent_dir" >&2
-    disk_size_kb=$(df -k "$parent_dir" 2>/dev/null | awk 'NR==2 {print $2}')
+  # Get disk size using df
+  # Try multiple formats to ensure compatibility with different df implementations
+  if ! disk_size_kb=$(df -P -k "$data_directory" 2>/dev/null | awk 'NR==2 {print $2}'); then
+    if ! disk_size_kb=$(df -k "$data_directory" 2>/dev/null | awk 'NR==2 {print $2}'); then
+      # If all attempts with the data directory failed, try parent directory
+      parent_dir=$(dirname "$data_directory")
+      log_warn "Failed to get disk size for $data_directory, trying parent directory: $parent_dir" >&2
+      
+      if ! disk_size_kb=$(df -P -k "$parent_dir" 2>/dev/null | awk 'NR==2 {print $2}'); then
+        disk_size_kb=$(df -k "$parent_dir" 2>/dev/null | awk 'NR==2 {print $2}' || echo "0")
+      fi
+    fi
   fi
   
   # Calculate GB from KB
