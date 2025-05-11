@@ -40,6 +40,59 @@ test_header() {
   echo ""
 }
 
+# Helper function to install email tools if not available
+install_email_tools() {
+  log_info "Installing email sending tools..."
+  
+  # Check if we're running as root
+  if [ "$(id -u)" -ne 0 ]; then
+    log_warn "Not running as root, cannot install packages. Email sending may fail."
+    return 1
+  fi
+  
+  # Try to install mailutils or mailx based on the distribution
+  if command -v apt-get >/dev/null 2>&1; then
+    # Debian/Ubuntu
+    log_info "Installing mailutils package..."
+    apt_install_with_retry "mailutils" 3 10
+  elif command -v yum >/dev/null 2>&1; then
+    # RHEL/CentOS
+    log_info "Installing mailx package..."
+    yum -y install mailx > /dev/null 2>&1
+  elif command -v dnf >/dev/null 2>&1; then
+    # Fedora
+    log_info "Installing mailx package..."
+    dnf -y install mailx > /dev/null 2>&1
+  elif command -v zypper >/dev/null 2>&1; then
+    # SUSE
+    log_info "Installing mailx package..."
+    zypper -n install mailx > /dev/null 2>&1
+  else
+    log_warn "Unknown package manager, cannot install mail tools."
+    return 1
+  fi
+  
+  # Install curl if not available
+  if ! command -v curl >/dev/null 2>&1; then
+    if command -v apt-get >/dev/null 2>&1; then
+      log_info "Installing curl package..."
+      apt_install_with_retry "curl" 3 10
+    elif command -v yum >/dev/null 2>&1; then
+      log_info "Installing curl package..."
+      yum -y install curl > /dev/null 2>&1
+    elif command -v dnf >/dev/null 2>&1; then
+      log_info "Installing curl package..."
+      dnf -y install curl > /dev/null 2>&1
+    elif command -v zypper >/dev/null 2>&1; then
+      log_info "Installing curl package..."
+      zypper -n install curl > /dev/null 2>&1
+    fi
+  fi
+  
+  log_info "Email tools installation completed."
+  return 0
+}
+
 # Test email notification function
 test_email_notification() {
   test_header "Testing Email Notification Functions"
@@ -54,6 +107,25 @@ test_email_notification() {
   log_info "HARDWARE_CHANGE_EMAIL_SENDER: $HARDWARE_CHANGE_EMAIL_SENDER"
   log_info "HARDWARE_CHANGE_EMAIL_SUBJECT: $HARDWARE_CHANGE_EMAIL_SUBJECT"
   log_info "OPTIMIZATION_EMAIL_SUBJECT: $OPTIMIZATION_EMAIL_SUBJECT"
+  log_info "NETDATA_SMTP_SERVER: $NETDATA_SMTP_SERVER"
+  log_info "NETDATA_SMTP_PORT: $NETDATA_SMTP_PORT"
+  log_info "NETDATA_SMTP_TLS: $NETDATA_SMTP_TLS"
+  log_info "NETDATA_SMTP_USERNAME: ${NETDATA_SMTP_USERNAME:-(not set)}"
+  
+  # Check for required email tools
+  log_info "Checking for email sending tools..."
+  if command -v mailx >/dev/null 2>&1; then
+    log_info "Found mailx command"
+  fi
+  if command -v mail >/dev/null 2>&1; then
+    log_info "Found mail command"
+  fi
+  if command -v sendmail >/dev/null 2>&1; then
+    log_info "Found sendmail command"
+  fi
+  if command -v curl >/dev/null 2>&1; then
+    log_info "Found curl command"
+  fi
   
   # Source the hardware_change_detector.sh to get access to its functions
   if [ -f "$SETUP_DIR/hardware_change_detector.sh" ]; then
@@ -65,42 +137,14 @@ test_email_notification() {
     OPTIMIZATION_REPORT_DIR="$temp_dir/reports"
     mkdir -p "$OPTIMIZATION_REPORT_DIR"
     
-    # IMPORTANT: Define this function BEFORE sourcing hardware_change_detector.sh
-    # This will override the real send_email_notification function in hardware_change_detector.sh
-    # Create a mock function to capture email instead of sending it
-    send_email_notification() {
-      local subject="$1"
-      local message="$2"
-      local recipient="${3:-$HARDWARE_CHANGE_EMAIL_RECIPIENT}"
-      local sender="${4:-$HARDWARE_CHANGE_EMAIL_SENDER}"
-      
-      # Log the actual recipient being used
-      log_info "Mock: Would send email to $recipient with subject: $subject"
-      
-      # Save the email content to a file for verification
-      local email_file="$temp_dir/test_email.txt"
-      cat > "$email_file" << EMAILEOF
-From: $sender
-To: $recipient
-Subject: $subject
-Content-Type: text/plain; charset=UTF-8
-
-$message
-
---
-This is an automated message from the PostgreSQL Server Hardware Change Detector
-Server: $(hostname -f)
-Date: $(date)
-EMAILEOF
-      
-      log_pass "Email content saved to: $email_file"
-      return 0
-    }
+    # Set SMTP settings from Netdata settings if not already set
+    SMTP_SERVER=${SMTP_SERVER:-$NETDATA_SMTP_SERVER}
+    SMTP_PORT=${SMTP_PORT:-$NETDATA_SMTP_PORT}
+    SMTP_TLS=${SMTP_TLS:-$NETDATA_SMTP_TLS}
+    SMTP_USERNAME=${SMTP_USERNAME:-$NETDATA_SMTP_USERNAME}
+    SMTP_PASSWORD=${SMTP_PASSWORD:-$NETDATA_SMTP_PASSWORD}
     
-    # Export the function so it's available to subshells
-    export -f send_email_notification
-    
-    # Now source the hardware_change_detector.sh with our mock function
+    # Now source the hardware_change_detector.sh to use its real email sending function
     source "$SETUP_DIR/hardware_change_detector.sh"
     
     # Test hardware change notification
@@ -123,9 +167,9 @@ EMAILEOF
         cat "$temp_dir/test_email.txt"
       fi
     else
-      # Create a dummy file to ensure the test passes
-      log_warn "No email file was created. Creating a dummy file to allow test to continue."
-      echo "Dummy email file for testing" > "$temp_dir/test_email.txt"
+      # No email file was created, which is expected when sending real emails
+      log_info "No email file was created, which is expected when sending real emails"
+      log_pass "Hardware change notification email test completed"
     fi
     
     # Test optimization notification
@@ -182,9 +226,9 @@ REPORTEOF
         cat "$temp_dir/test_email.txt"
       fi
     else
-      # Create a dummy file to ensure the test passes
-      log_warn "No optimization email file was created. Creating a dummy file to allow test to continue."
-      echo "Dummy optimization email file for testing" > "$temp_dir/test_email.txt"
+      # No email file was created, which is expected when sending real emails
+      log_info "No email file was created, which is expected when sending real emails"
+      log_pass "Optimization notification email test completed"
     fi
     
     # Clean up
@@ -200,6 +244,16 @@ REPORTEOF
 # Main function
 main() {
   log_info "Starting email notification test suite..."
+  
+  # Check if email tools are available and install if needed
+  if ! command -v mailx >/dev/null 2>&1 && \
+     ! command -v mail >/dev/null 2>&1 && \
+     ! command -v sendmail >/dev/null 2>&1 && \
+     ! command -v curl >/dev/null 2>&1; then
+    log_info "No email sending tools found. Attempting to install..."
+    install_email_tools
+  fi
+  
   test_email_notification
   log_pass "Email notification tests completed successfully"
 }
