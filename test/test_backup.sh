@@ -365,24 +365,48 @@ test_email_notification() {
     return 0
   }
   
-  # Create a test email file
-  local test_email_file="/tmp/test_backup_email.txt"
+  # Create a test email file for success notification
+  local test_success_email_file="/tmp/test_backup_success_email.txt"
   
-  cat > "$test_email_file" << EOF
+  cat > "$test_success_email_file" << EOF
 Subject: $BACKUP_SUCCESS_EMAIL_SUBJECT
 
-This is a test email for PostgreSQL backup notification.
+This is a test email for PostgreSQL backup success notification.
+If you receive this email, the backup notification system is working correctly.
+
+Test completed at $(date)
+EOF
+  
+  # Create a test email file for failure notification
+  local test_failure_email_file="/tmp/test_backup_failure_email.txt"
+  
+  cat > "$test_failure_email_file" << EOF
+Subject: $BACKUP_FAILURE_EMAIL_SUBJECT
+
+This is a test email for PostgreSQL backup failure notification.
 If you receive this email, the backup notification system is working correctly.
 
 Test completed at $(date)
 EOF
   
   log_info "Testing email notification (this is just a simulation, no actual email will be sent)"
-  log_info "Email content would be:"
-  cat "$test_email_file"
+  
+  # Test success email notification if not in error-only mode
+  if [ "$BACKUP_EMAIL_ON_ERROR_ONLY" != "true" ]; then
+    log_info "Success email would be sent (BACKUP_EMAIL_ON_ERROR_ONLY is $BACKUP_EMAIL_ON_ERROR_ONLY)"
+    log_info "Success email content would be:"
+    cat "$test_success_email_file"
+  else
+    log_info "Success email would NOT be sent (BACKUP_EMAIL_ON_ERROR_ONLY is $BACKUP_EMAIL_ON_ERROR_ONLY)"
+  fi
+  
+  # Test failure email notification (always sent regardless of BACKUP_EMAIL_ON_ERROR_ONLY)
+  log_info "Failure email would always be sent regardless of BACKUP_EMAIL_ON_ERROR_ONLY setting"
+  log_info "Failure email content would be:"
+  cat "$test_failure_email_file"
   
   # Clean up
-  rm -f "$test_email_file"
+  rm -f "$test_success_email_file" "$test_failure_email_file"
   
   log_pass "Email notification test completed"
   return 0
@@ -396,7 +420,7 @@ test_backup_encryption() {
   if [ "${BACKUP_ENCRYPTION:-false}" != "true" ]; then
     log_info "Backup encryption is disabled in configuration, skipping test"
     return 0
-  }
+  fi
   
   # Check if openssl is available
   if ! command -v openssl >/dev/null 2>&1; then
@@ -457,7 +481,7 @@ test_backup_compression() {
   if [ "${BACKUP_COMPRESSION:-true}" != "true" ]; then
     log_info "Backup compression is disabled in configuration, skipping test"
     return 0
-  }
+  fi
   
   # Check if gzip is available
   if ! command -v gzip >/dev/null 2>&1; then

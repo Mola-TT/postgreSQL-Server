@@ -142,8 +142,8 @@ echo "Starting full backup at $(date)" > "$LOG_FILE"
 if pgbackrest --stanza=main backup --type=full >> "$LOG_FILE" 2>&1; then
   echo "Full backup completed successfully at $(date)" >> "$LOG_FILE"
   
-  # Send success email if enabled
-  if [ "$BACKUP_EMAIL_NOTIFICATIONS" = "true" ]; then
+  # Send success email if enabled and not in error-only mode
+  if [ "$BACKUP_EMAIL_NOTIFICATIONS" = "true" ] && [ "$BACKUP_EMAIL_ON_ERROR_ONLY" != "true" ]; then
     echo -e "Subject: $BACKUP_SUCCESS_EMAIL_SUBJECT\n\nFull backup completed successfully at $(date)\n\nBackup details:\n$(pgbackrest info)" | sendmail -f "$BACKUP_EMAIL_SENDER" "$BACKUP_EMAIL_RECIPIENT"
   fi
   
@@ -182,8 +182,8 @@ echo "Starting incremental backup at $(date)" > "$LOG_FILE"
 if pgbackrest --stanza=main backup --type=incr >> "$LOG_FILE" 2>&1; then
   echo "Incremental backup completed successfully at $(date)" >> "$LOG_FILE"
   
-  # Send success email if enabled
-  if [ "$BACKUP_EMAIL_NOTIFICATIONS" = "true" ]; then
+  # Send success email if enabled and not in error-only mode
+  if [ "$BACKUP_EMAIL_NOTIFICATIONS" = "true" ] && [ "$BACKUP_EMAIL_ON_ERROR_ONLY" != "true" ]; then
     echo -e "Subject: $BACKUP_SUCCESS_EMAIL_SUBJECT\n\nIncremental backup completed successfully at $(date)\n\nBackup details:\n$(pgbackrest info)" | sendmail -f "$BACKUP_EMAIL_SENDER" "$BACKUP_EMAIL_RECIPIENT"
   fi
   
@@ -222,8 +222,8 @@ echo "Starting backup verification at $(date)" > "$LOG_FILE"
 if pgbackrest --stanza=main check >> "$LOG_FILE" 2>&1; then
   echo "Backup verification completed successfully at $(date)" >> "$LOG_FILE"
   
-  # Send success email if enabled
-  if [ "$BACKUP_EMAIL_NOTIFICATIONS" = "true" ]; then
+  # Send success email if enabled and not in error-only mode
+  if [ "$BACKUP_EMAIL_NOTIFICATIONS" = "true" ] && [ "$BACKUP_EMAIL_ON_ERROR_ONLY" != "true" ]; then
     echo -e "Subject: Backup Verification Successful\n\nBackup verification completed successfully at $(date)" | sendmail -f "$BACKUP_EMAIL_SENDER" "$BACKUP_EMAIL_RECIPIENT"
   fi
   
