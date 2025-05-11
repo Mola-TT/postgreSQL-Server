@@ -29,14 +29,24 @@ test_email_notification() {
   # Create a temporary directory
   local temp_dir=$(mktemp -d 2>/dev/null || mktemp -d -t 'emailtest')
   
+  # Debug: Print current email settings
+  log_info "Current email settings:"
+  log_info "HARDWARE_CHANGE_EMAIL_ENABLED: $HARDWARE_CHANGE_EMAIL_ENABLED"
+  log_info "HARDWARE_CHANGE_EMAIL_RECIPIENT: $HARDWARE_CHANGE_EMAIL_RECIPIENT"
+  log_info "HARDWARE_CHANGE_EMAIL_SENDER: $HARDWARE_CHANGE_EMAIL_SENDER"
+  log_info "HARDWARE_CHANGE_EMAIL_SUBJECT: $HARDWARE_CHANGE_EMAIL_SUBJECT"
+  log_info "OPTIMIZATION_EMAIL_SUBJECT: $OPTIMIZATION_EMAIL_SUBJECT"
+  
   # Source the hardware_change_detector.sh to get access to its functions
   if [ -f "$SETUP_DIR/hardware_change_detector.sh" ]; then
-    # Override the actual email sending to prevent real emails during testing
+    # Override only the email sending behavior but keep the recipient from environment
     HARDWARE_CHANGE_EMAIL_ENABLED=true
-    HARDWARE_CHANGE_EMAIL_RECIPIENT="test@example.com"
-    HARDWARE_CHANGE_EMAIL_SENDER="postgres@test.local"
-    HARDWARE_CHANGE_EMAIL_SUBJECT="[TEST] Hardware Change Detected"
-    OPTIMIZATION_EMAIL_SUBJECT="[TEST] Optimization Completed"
+    # Don't override the recipient - use the one from environment
+    # HARDWARE_CHANGE_EMAIL_RECIPIENT="test@example.com"
+    # HARDWARE_CHANGE_EMAIL_SENDER="postgres@test.local"
+    # Use default subjects if not set in environment
+    HARDWARE_CHANGE_EMAIL_SUBJECT=${HARDWARE_CHANGE_EMAIL_SUBJECT:-"[TEST] Hardware Change Detected"}
+    OPTIMIZATION_EMAIL_SUBJECT=${OPTIMIZATION_EMAIL_SUBJECT:-"[TEST] Optimization Completed"}
     OPTIMIZATION_REPORT_DIR="$temp_dir/reports"
     mkdir -p "$OPTIMIZATION_REPORT_DIR"
     
@@ -47,6 +57,7 @@ test_email_notification() {
       local recipient="${3:-$HARDWARE_CHANGE_EMAIL_RECIPIENT}"
       local sender="${4:-$HARDWARE_CHANGE_EMAIL_SENDER}"
       
+      # Log the actual recipient being used
       log_info "Mock: Would send email to $recipient with subject: $subject"
       
       # Save the email content to a file for verification
