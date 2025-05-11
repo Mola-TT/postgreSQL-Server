@@ -170,7 +170,7 @@ install_package_with_retry() {
   local success=false
   local log_file="/tmp/pkg_install_$$.log"
   
-  log_info "Installing package(s): $packages (with retry mechanism)"
+  log_info "Installing package(s): $packages"
   
   # Detect package manager
   if command_exists apt-get; then
