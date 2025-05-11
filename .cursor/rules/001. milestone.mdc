@@ -7,6 +7,47 @@ alwaysApply: true
 
 ## Current Progress: Milestone 5 (Completed)
 
+## Milestone 6 (Planned)
+- Create `dynamic_optimization.sh` under setup folder that:
+  - Detects hardware specifications (CPU cores, memory, disk size)
+  - Dynamically calculates optimal PostgreSQL configuration parameters
+  - Dynamically calculates optimal pgbouncer configuration parameters
+  - Implements intelligent resource allocation based on available hardware
+  - Provides performance recommendations based on workload patterns
+  - Creates monitoring hooks to detect performance bottlenecks
+- Create `hardware_change_detector.sh` under setup folder that:
+  - Implements a service to monitor for hardware changes (CPU, RAM, disk)
+  - Triggers automatic reconfiguration when hardware changes are detected
+  - Records previous vs. new hardware specifications for comparison
+  - Performs gradual/phased optimization during production hours
+  - Creates backup of previous configuration before applying changes
+- Update PostgreSQL configuration for dynamic scaling:
+  - Implement dynamic shared_buffers sizing (percentage of total RAM)
+  - Configure work_mem based on available memory and connection count
+  - Adjust effective_cache_size based on total system memory
+  - Optimize max_connections based on available CPU and memory
+  - Configure maintenance_work_mem for optimal vacuum performance
+  - Implement dynamic checkpoint configuration
+  - Tune WAL settings based on disk I/O capabilities
+- Update pgbouncer configuration for dynamic scaling:
+  - Dynamically adjust default_pool_size based on CPU cores
+  - Calculate optimal max_client_conn based on system resources
+  - Implement dynamic reserve_pool_size calculation
+  - Configure connection pooling strategy based on workload analysis
+  - Optimize pool_mode selection based on application query patterns
+- Create comprehensive test script (`test_dynamic_optimization.sh`) to validate:
+  - Correct parameter calculations for different hardware profiles
+  - Proper configuration file generation and application
+  - Performance improvements after optimization
+  - Correct behavior during hardware change simulations
+  - Resource utilization before and after optimization
+- Create analytics and reporting for optimization:
+  - Generate optimization reports with before/after comparisons
+  - Visualize performance metrics through Netdata dashboards
+  - Implement predictive analysis for future resource needs
+  - Create alerting system for approaching resource limits
+  - Document optimization decisions and rationale
+
 ## Milestone 5
 - Created `ssl_renewal.sh` under setup folder that:
   - Set up automatic renewal of Let's Encrypt SSL certificates
