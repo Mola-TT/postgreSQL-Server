@@ -124,8 +124,8 @@ main() {
     # Setup PostgreSQL and pgbouncer
     log_info "Setting up PostgreSQL and pgbouncer..."
     if setup_postgresql; then
-        log_info "PostgreSQL setup completed successfully"
         pg_success=true
+        # Don't duplicate success message, already output by the component script
     else
         log_error "PostgreSQL setup encountered issues, but continuing with other setup steps"
     fi
@@ -133,8 +133,8 @@ main() {
     # Setup Nginx for subdomain mapping
     log_info "Setting up Nginx for subdomain mapping..."
     if setup_nginx; then
-        log_info "Nginx setup completed successfully"
         nginx_success=true
+        # Don't duplicate success message, already output by the component script
     else
         log_error "Nginx setup encountered issues, but continuing with other setup steps"
     fi
@@ -142,8 +142,8 @@ main() {
     # Setup Netdata monitoring
     log_info "Setting up Netdata monitoring..."
     if setup_netdata; then
-        log_info "Netdata setup completed successfully"
         netdata_success=true
+        # Don't duplicate success message, already output by the component script
     else
         log_error "Netdata setup encountered issues, but continuing with other setup steps"
     fi
@@ -151,8 +151,8 @@ main() {
     # Setup SSL certificate auto-renewal
     log_info "Setting up SSL certificate auto-renewal..."
     if setup_ssl_renewal; then
-        log_info "SSL certificate auto-renewal setup completed successfully"
         ssl_renewal_success=true
+        # Don't duplicate success message, already output by the component script
     else
         log_error "SSL certificate auto-renewal setup encountered issues, but continuing"
     fi
@@ -191,8 +191,8 @@ EOF
             chmod +x "$TEMP_SCRIPT"
             
             if "$TEMP_SCRIPT"; then
-                log_info "Dynamic optimization completed successfully"
                 dynamic_opt_success=true
+                # Don't duplicate success message, already output by the component script
             else
                 log_error "Dynamic optimization encountered issues, but continuing"
             fi
@@ -237,8 +237,8 @@ EOF
         chmod +x "$TEMP_SCRIPT"
         
         if "$TEMP_SCRIPT"; then
-            log_info "Hardware change detector service installed successfully"
             hw_detector_success=true
+            # Don't duplicate success message, already output by the component script
         else
             log_error "Hardware change detector service installation encountered issues, but continuing"
         fi
