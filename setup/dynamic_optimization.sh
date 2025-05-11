@@ -78,17 +78,42 @@ detect_disk_size() {
   local disk_size_gb
   
   # Get PostgreSQL data directory
-  data_directory=$(su - postgres -c "psql -t -c \"SHOW data_directory;\"" 2>/dev/null | grep -v '^$')
+  data_directory=$(su - postgres -c "psql -t -c \"SHOW data_directory;\"" 2>/dev/null | grep -v '^$' | tr -d ' ')
   
-  # If data_directory is not found, use default
-  if [ -z "$data_directory" ]; then
-    log_warn "Could not detect PostgreSQL data directory, using current disk" >&2
-    data_directory="/"
+  # If data_directory is not found or empty, try common locations
+  if [ -z "$data_directory" ] || [ ! -d "$data_directory" ]; then
+    log_info "PostgreSQL data directory not found or not accessible, trying common locations..." >&2
+    
+    # Try common PostgreSQL data directory locations
+    for possible_dir in "/var/lib/postgresql/14/main" "/var/lib/postgresql/15/main" "/var/lib/postgresql/16/main" "/var/lib/postgresql/13/main"; do
+      if [ -d "$possible_dir" ]; then
+        data_directory="$possible_dir"
+        log_info "Found PostgreSQL data directory at: $data_directory" >&2
+        break
+      fi
+    done
+    
+    # If still not found, use root filesystem
+    if [ -z "$data_directory" ] || [ ! -d "$data_directory" ]; then
+      log_warn "Could not detect PostgreSQL data directory, using root filesystem" >&2
+      data_directory="/"
+    fi
   fi
   
   # Get disk size
-  disk_size_kb=$(df -k "$data_directory" | awk 'NR==2 {print $2}')
-  disk_size_gb=$((disk_size_kb / 1024 / 1024))
+  disk_size_kb=$(df -k "$data_directory" 2>/dev/null | awk 'NR==2 {print $2}')
+  
+  # If df command failed, try with the parent directory
+  if [ -z "$disk_size_kb" ] || [ "$disk_size_kb" -lt 1 ]; then
+    parent_dir=$(dirname "$data_directory")
+    log_warn "Failed to get disk size for $data_directory, trying parent directory: $parent_dir" >&2
+    disk_size_kb=$(df -k "$parent_dir" 2>/dev/null | awk 'NR==2 {print $2}')
+  fi
+  
+  # Calculate GB from KB
+  if [ -n "$disk_size_kb" ] && [ "$disk_size_kb" -gt 0 ]; then
+    disk_size_gb=$((disk_size_kb / 1024 / 1024))
+  fi
   
   # If detection failed, default to 50GB
   if [ -z "$disk_size_gb" ] || [ "$disk_size_gb" -lt 1 ]; then

@@ -62,11 +62,45 @@ collect_hardware_specs() {
   local disk_size_gb
   
   # Get PostgreSQL data directory
-  data_directory=$(su - postgres -c "psql -t -c \"SHOW data_directory;\"" 2>/dev/null | grep -v '^$' || echo "/var/lib/postgresql")
+  data_directory=$(su - postgres -c "psql -t -c \"SHOW data_directory;\"" 2>/dev/null | grep -v '^$' | tr -d ' ' || echo "")
+  
+  # If data_directory is not found or empty, try common locations
+  if [ -z "$data_directory" ] || [ ! -d "$data_directory" ]; then
+    # Try common PostgreSQL data directory locations
+    for possible_dir in "/var/lib/postgresql/14/main" "/var/lib/postgresql/15/main" "/var/lib/postgresql/16/main" "/var/lib/postgresql/13/main"; do
+      if [ -d "$possible_dir" ]; then
+        data_directory="$possible_dir"
+        break
+      fi
+    done
+    
+    # If still not found, use root filesystem
+    if [ -z "$data_directory" ] || [ ! -d "$data_directory" ]; then
+      data_directory="/var/lib/postgresql"
+      
+      # If even that doesn't exist, use root
+      if [ ! -d "$data_directory" ]; then
+        data_directory="/"
+      fi
+    fi
+  fi
   
   # Get disk size
-  disk_size_kb=$(df -k "$data_directory" | awk 'NR==2 {print $2}' || echo "0")
+  disk_size_kb=$(df -k "$data_directory" 2>/dev/null | awk 'NR==2 {print $2}' || echo "0")
+  
+  # If df command failed, try with the parent directory
+  if [ -z "$disk_size_kb" ] || [ "$disk_size_kb" -lt 1 ]; then
+    parent_dir=$(dirname "$data_directory")
+    disk_size_kb=$(df -k "$parent_dir" 2>/dev/null | awk 'NR==2 {print $2}' || echo "0")
+  fi
+  
+  # Calculate GB
   disk_size_gb=$((disk_size_kb / 1024 / 1024))
+  
+  # If detection failed, default to 50GB
+  if [ "$disk_size_gb" -lt 1 ]; then
+    disk_size_gb=50
+  fi
   
   # Swap Size
   local swap_size_kb
