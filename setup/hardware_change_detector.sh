@@ -21,6 +21,162 @@ source "$HW_DETECTOR_LIB_DIR/utilities.sh"
 HARDWARE_SPECS_FILE="/var/lib/postgresql/hardware_specs.json"
 PREVIOUS_SPECS_FILE="/var/lib/postgresql/previous_hardware_specs.json"
 
+# Email notification settings (default values, will be overridden by environment variables)
+HARDWARE_CHANGE_EMAIL_ENABLED=${HARDWARE_CHANGE_EMAIL_ENABLED:-true}
+HARDWARE_CHANGE_EMAIL_RECIPIENT=${HARDWARE_CHANGE_EMAIL_RECIPIENT:-"root"}
+HARDWARE_CHANGE_EMAIL_SENDER=${HARDWARE_CHANGE_EMAIL_SENDER:-"postgres@$(hostname -f)"}
+HARDWARE_CHANGE_EMAIL_SUBJECT=${HARDWARE_CHANGE_EMAIL_SUBJECT:-"[ALERT] Hardware Change Detected on PostgreSQL Server"}
+OPTIMIZATION_EMAIL_SUBJECT=${OPTIMIZATION_EMAIL_SUBJECT:-"PostgreSQL Server Optimization Completed"}
+SMTP_SERVER=${NETDATA_SMTP_SERVER:-"localhost"}
+SMTP_PORT=${NETDATA_SMTP_PORT:-25}
+SMTP_TLS=${NETDATA_SMTP_TLS:-"NO"}
+SMTP_USERNAME=${NETDATA_SMTP_USERNAME:-""}
+SMTP_PASSWORD=${NETDATA_SMTP_PASSWORD:-""}
+
+# Function to send email notifications
+send_email_notification() {
+  local subject="$1"
+  local message="$2"
+  local recipient="${3:-$HARDWARE_CHANGE_EMAIL_RECIPIENT}"
+  local sender="${4:-$HARDWARE_CHANGE_EMAIL_SENDER}"
+  
+  # Check if email notifications are enabled
+  if [ "$HARDWARE_CHANGE_EMAIL_ENABLED" != "true" ]; then
+    log_info "Email notifications are disabled. Skipping email."
+    return 0
+  fi
+  
+  log_info "Sending email notification to $recipient..."
+  
+  # Create a temporary email file
+  local email_file=$(mktemp)
+  
+  # Create email content
+  cat > "$email_file" << EOF
+From: $sender
+To: $recipient
+Subject: $subject
+Content-Type: text/plain; charset=UTF-8
+
+$message
+
+--
+This is an automated message from the PostgreSQL Server Hardware Change Detector
+Server: $(hostname -f)
+Date: $(date)
+EOF
+  
+  # Use different methods to send email based on what's available
+  if command -v mailx >/dev/null 2>&1; then
+    # Use mailx if available
+    if [ -n "$SMTP_USERNAME" ] && [ -n "$SMTP_PASSWORD" ]; then
+      cat "$email_file" | mailx -S "smtp=$SMTP_SERVER:$SMTP_PORT" \
+                                -S "smtp-use-starttls=$SMTP_TLS" \
+                                -S "smtp-auth=login" \
+                                -S "smtp-auth-user=$SMTP_USERNAME" \
+                                -S "smtp-auth-password=$SMTP_PASSWORD" \
+                                -t "$recipient" > /dev/null 2>&1
+    else
+      cat "$email_file" | mailx -S "smtp=$SMTP_SERVER:$SMTP_PORT" \
+                                -t "$recipient" > /dev/null 2>&1
+    fi
+  elif command -v mail >/dev/null 2>&1; then
+    # Use mail command if available
+    cat "$email_file" | mail -s "$subject" "$recipient" > /dev/null 2>&1
+  elif command -v sendmail >/dev/null 2>&1; then
+    # Use sendmail if available
+    cat "$email_file" | sendmail -t > /dev/null 2>&1
+  elif command -v curl >/dev/null 2>&1 && [ -n "$SMTP_USERNAME" ] && [ -n "$SMTP_PASSWORD" ]; then
+    # Use curl as a last resort if SMTP credentials are available
+    curl --url "smtp://$SMTP_SERVER:$SMTP_PORT" \
+         --mail-from "$sender" \
+         --mail-rcpt "$recipient" \
+         --upload-file "$email_file" \
+         --user "$SMTP_USERNAME:$SMTP_PASSWORD" \
+         --ssl-reqd > /dev/null 2>&1
+  else
+    log_warn "No email sending methods available. Email notification could not be sent."
+    rm -f "$email_file" 2>/dev/null || true
+    return 1
+  fi
+  
+  local status=$?
+  if [ $status -eq 0 ]; then
+    log_info "Email notification sent successfully."
+  else
+    log_warn "Failed to send email notification."
+  fi
+  
+  # Clean up
+  rm -f "$email_file" 2>/dev/null || true
+  
+  return $status
+}
+
+# Function to send hardware change notification
+send_hardware_change_notification() {
+  local current_cpu_cores="$1"
+  local previous_cpu_cores="$2"
+  local cpu_change="$3"
+  local current_memory_mb="$4"
+  local previous_memory_mb="$5"
+  local memory_change="$6"
+  local current_disk_gb="$7"
+  local previous_disk_gb="$8"
+  local disk_change="$9"
+  
+  local message="Hardware changes have been detected on the PostgreSQL server.
+
+HARDWARE CHANGE DETAILS:
+-----------------------
+CPU Cores: $previous_cpu_cores → $current_cpu_cores (${cpu_change}% change)
+Memory: $previous_memory_mb MB → $current_memory_mb MB (${memory_change}% change)
+Disk Size: $previous_disk_gb GB → $current_disk_gb GB (${disk_change}% change)
+
+ACTION TAKEN:
+------------
+The PostgreSQL server has been automatically reconfigured to optimize for the new hardware specifications.
+A backup of the previous configuration has been created before making changes.
+
+OPTIMIZATION REPORT:
+------------------
+A detailed optimization report is available at:
+$OPTIMIZATION_REPORT_DIR/optimization_report_$(date +%Y%m%d%H%M%S).txt
+
+Please review the changes and monitor system performance.
+"
+
+  send_email_notification "$HARDWARE_CHANGE_EMAIL_SUBJECT" "$message"
+}
+
+# Function to send optimization completion notification
+send_optimization_notification() {
+  local report_file="$1"
+  
+  # Check if the report file exists
+  if [ ! -f "$report_file" ]; then
+    log_warn "Optimization report file not found: $report_file"
+    return 1
+  }
+  
+  # Read the report file content
+  local report_content=$(cat "$report_file")
+  
+  local message="PostgreSQL server optimization has been completed successfully.
+
+OPTIMIZATION REPORT:
+------------------
+$report_content
+
+The server has been reconfigured to optimize performance based on the current hardware specifications.
+A backup of the previous configuration has been created before making changes.
+
+Please monitor system performance and review the changes if necessary.
+"
+
+  send_email_notification "$OPTIMIZATION_EMAIL_SUBJECT" "$message"
+}
+
 # Create directory if it doesn't exist
 create_specs_directory() {
   if [ ! -d "$(dirname "$HARDWARE_SPECS_FILE")" ]; then
@@ -293,6 +449,12 @@ compare_hardware_specs() {
     log_info "CPU Cores: $previous_cpu_cores → $current_cpu_cores (${cpu_change}% change)" >&2
     log_info "Memory: $previous_memory_mb MB → $current_memory_mb MB (${memory_change}% change)" >&2
     log_info "Disk Size: $previous_disk_gb GB → $current_disk_gb GB (${disk_change}% change)" >&2
+    
+    # Send email notification about hardware changes
+    send_hardware_change_notification "$current_cpu_cores" "$previous_cpu_cores" "$cpu_change" \
+                                     "$current_memory_mb" "$previous_memory_mb" "$memory_change" \
+                                     "$current_disk_gb" "$previous_disk_gb" "$disk_change"
+    
     return 0
   else
     log_info "No significant hardware changes detected." >&2
@@ -314,6 +476,17 @@ trigger_reconfiguration() {
     local result=$?
     if [ $result -eq 0 ]; then
       log_info "Dynamic optimization completed successfully."
+      
+      # Find the latest optimization report
+      local latest_report
+      latest_report=$(find "$OPTIMIZATION_REPORT_DIR" -name "optimization_report_*.txt" | sort -r | head -n 1)
+      
+      # Send email notification with the optimization report
+      if [ -n "$latest_report" ]; then
+        send_optimization_notification "$latest_report"
+      else
+        log_warn "No optimization report found. Email notification not sent."
+      fi
     else
       log_error "Dynamic optimization failed with exit code $result."
       log_info "Restoring previous configuration..."
