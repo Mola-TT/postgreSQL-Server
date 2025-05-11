@@ -30,6 +30,7 @@ run_all_tests() {
     local passed=0
     
     log_section "RUNNING ALL TESTS"
+    echo ""
     
     # Explicit test order
     local ordered_tests=(
