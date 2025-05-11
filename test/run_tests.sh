@@ -31,20 +31,21 @@ run_all_tests() {
     
     log_section "RUNNING ALL TESTS"
     
-    # Find all test scripts (excluding this one)
-    for test_script in "$TEST_DIR"/*.sh; do
-        # Skip this script
-        if [[ "$(basename "$test_script")" == "run_tests.sh" ]]; then
+    # Explicit test order
+    local ordered_tests=(
+        "$TEST_DIR/test_pg_connection.sh"
+        "$TEST_DIR/test_netdata.sh"
+        "$TEST_DIR/test_ssl_renewal.sh"
+    )
+    
+    for test_script in "${ordered_tests[@]}"; do
+        if [ ! -f "$test_script" ]; then
+            log_warn "Test script not found: $(basename "$test_script")"
             continue
         fi
-        
-        # Make sure the script is executable
         chmod +x "$test_script"
-        
         test_name=$(basename "$test_script")
         log_info "Running test: $test_name"
-        
-        # Run the test script
         if "$test_script"; then
             log_info "✓ $test_name: PASSED"
             ((passed++))
@@ -52,7 +53,6 @@ run_all_tests() {
             log_error "✗ $test_name: FAILED"
             ((failed++))
         fi
-        
         ((test_count++))
         echo ""
     done
