@@ -7,12 +7,30 @@ TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$TEST_DIR")"
 LIB_DIR="$PROJECT_DIR/lib"
 SETUP_DIR="$PROJECT_DIR/setup"
+CONF_DIR="$PROJECT_DIR/conf"
 
 # Source the logger functions
 source "$LIB_DIR/logger.sh"
 
 # Source utilities
 source "$LIB_DIR/utilities.sh"
+
+# Load environment variables
+log_info "Loading environment variables from conf/default.env and conf/user.env"
+# First load default environment variables
+if [ -f "$CONF_DIR/default.env" ]; then
+  source "$CONF_DIR/default.env"
+else
+  log_error "Default environment file not found at $CONF_DIR/default.env"
+fi
+
+# Then override with user environment variables if available
+if [ -f "$CONF_DIR/user.env" ]; then
+  source "$CONF_DIR/user.env"
+  log_info "Loaded user environment from $CONF_DIR/user.env"
+else
+  log_warn "User environment file not found at $CONF_DIR/user.env"
+fi
 
 # Test header function
 test_header() {
