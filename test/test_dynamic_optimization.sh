@@ -255,6 +255,10 @@ test_config_generation() {
   # Test PostgreSQL configuration generation
   log_info "Testing PostgreSQL configuration file generation..."
   
+  # Define the library directories as they would be in the source script
+  DYNAMIC_OPT_SCRIPT_DIR="$SETUP_DIR"
+  DYNAMIC_OPT_LIB_DIR="$SETUP_DIR/../lib"
+  
   # Ensure the dynamic optimization script has execute permissions
   chmod +x "$SETUP_DIR/dynamic_optimization.sh" 2>/dev/null || log_warn "Could not set execute permission on dynamic_optimization.sh"
   
@@ -548,7 +552,50 @@ test_report_generation() {
   # Replace the report directory in the copy
   if command -v sed >/dev/null 2>&1; then
     # Try sed replacement if available
-    sed "s|/var/lib/postgresql/optimization_reports|$test_report_dir|g" "$SETUP_DIR/dynamic_optimization.sh" > "$temp_script"
+    # Only replace the optimization_reports path but keep the original library paths
+    if ! sed "s|/var/lib/postgresql/optimization_reports|$test_report_dir|g" "$SETUP_DIR/dynamic_optimization.sh" > "$temp_script"; then
+      log_warn "sed replacement failed, using alternative approach"
+      cp "$SETUP_DIR/dynamic_optimization.sh" "$temp_script"
+    fi
+    
+    # Instead of trying to fix the paths in the script, just create a modified version
+    # that will use the original library paths
+    cat > "$temp_script" << EOF
+#!/bin/bash
+# Modified test script that preserves original paths
+
+# Script directory - using fixed paths for testing
+DYNAMIC_OPT_SCRIPT_DIR="$SETUP_DIR"
+DYNAMIC_OPT_LIB_DIR="$LIB_DIR"
+
+# Source the logger functions
+source "$LIB_DIR/logger.sh"
+
+# Source utilities
+source "$LIB_DIR/utilities.sh"
+
+# Source PostgreSQL utilities for consistent SQL execution
+source "$LIB_DIR/pg_extract_hash.sh"
+
+# Flag variables
+MINIMAL_MODE=false
+FULL_MODE=false
+
+EOF
+    
+    # Append the function definitions from the original script, but skip the header
+    sed -n '/^# Hardware detection functions/,$p' "$SETUP_DIR/dynamic_optimization.sh" >> "$temp_script"
+    
+    # Now replace the optimization report directory path
+    sed -i.bak "s|/var/lib/postgresql/optimization_reports|$test_report_dir|g" "$temp_script" 2>/dev/null || true
+    
+    # Create the lib directory in the temp dir as a fallback
+    mkdir -p "$TEMP_TEST_DIR/lib" 2>/dev/null || true
+    
+    # Copy library scripts just in case
+    [ -f "$LIB_DIR/logger.sh" ] && cp "$LIB_DIR/logger.sh" "$TEMP_TEST_DIR/lib/" 2>/dev/null || true
+    [ -f "$LIB_DIR/utilities.sh" ] && cp "$LIB_DIR/utilities.sh" "$TEMP_TEST_DIR/lib/" 2>/dev/null || true
+    [ -f "$LIB_DIR/pg_extract_hash.sh" ] && cp "$LIB_DIR/pg_extract_hash.sh" "$TEMP_TEST_DIR/lib/" 2>/dev/null || true
   else
     # Fallback to a simple test report
     log_warn "sed command not available, using fallback test report generation"
