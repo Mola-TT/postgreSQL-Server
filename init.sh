@@ -101,7 +101,8 @@ execute_script() {
         fi
         return 0
     else
-        log_error "$script_name encountered issues, but continuing with other setup steps"
+        local exit_code=$?
+        log_error "$script_name encountered issues (exit code: $exit_code), but continuing with other setup steps"
         if [ -n "$success_var" ]; then
             eval "$success_var=false"
         fi
