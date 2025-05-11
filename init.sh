@@ -8,6 +8,8 @@ set -e
 
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Setup directory
+SETUP_DIR="$SCRIPT_DIR/setup"
 
 # Source logger
 source "$SCRIPT_DIR/lib/logger.sh"
@@ -153,11 +155,37 @@ run_tests() {
 # Setup hardware change detection service
 setup_hardware_change_detection() {
   log_info "Setting up hardware change detection service..."
-  if [ -f "$SETUP_DIR/hardware_change_detector.sh" ]; then
+  
+  # Define possible script locations
+  local script_paths=(
+    "$SETUP_DIR/hardware_change_detector.sh"
+    "$SCRIPT_DIR/setup/hardware_change_detector.sh"
+    "/root/postgreSQL-Server/setup/hardware_change_detector.sh"
+    "$(dirname "$SCRIPT_DIR")/setup/hardware_change_detector.sh"
+  )
+  
+  # Find the script in possible locations
+  local script_found=false
+  local script_path=""
+  
+  for path in "${script_paths[@]}"; do
+    if [ -f "$path" ]; then
+      script_path="$path"
+      script_found=true
+      log_info "Found hardware_change_detector.sh at: $script_path"
+      break
+    fi
+  done
+  
+  if [ "$script_found" = true ]; then
     log_info "Executing hardware_change_detector.sh..."
-    bash "$SETUP_DIR/hardware_change_detector.sh"
+    bash "$script_path"
+    return $?
   else
-    log_error "hardware_change_detector.sh not found at $SETUP_DIR/hardware_change_detector.sh"
+    log_error "hardware_change_detector.sh not found. Searched in:"
+    for path in "${script_paths[@]}"; do
+      log_error "  - $path"
+    done
     return 1
   fi
 }
@@ -165,11 +193,37 @@ setup_hardware_change_detection() {
 # Setup backup configuration
 setup_backup_configuration() {
   log_info "Setting up PostgreSQL backup configuration..."
-  if [ -f "$SETUP_DIR/backup_config.sh" ]; then
+  
+  # Define possible script locations
+  local script_paths=(
+    "$SETUP_DIR/backup_config.sh"
+    "$SCRIPT_DIR/setup/backup_config.sh"
+    "/root/postgreSQL-Server/setup/backup_config.sh"
+    "$(dirname "$SCRIPT_DIR")/setup/backup_config.sh"
+  )
+  
+  # Find the script in possible locations
+  local script_found=false
+  local script_path=""
+  
+  for path in "${script_paths[@]}"; do
+    if [ -f "$path" ]; then
+      script_path="$path"
+      script_found=true
+      log_info "Found backup_config.sh at: $script_path"
+      break
+    fi
+  done
+  
+  if [ "$script_found" = true ]; then
     log_info "Executing backup_config.sh..."
-    bash "$SETUP_DIR/backup_config.sh"
+    bash "$script_path"
+    return $?
   else
-    log_error "backup_config.sh not found at $SETUP_DIR/backup_config.sh"
+    log_error "backup_config.sh not found. Searched in:"
+    for path in "${script_paths[@]}"; do
+      log_error "  - $path"
+    done
     return 1
   fi
 }
