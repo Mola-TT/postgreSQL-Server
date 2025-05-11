@@ -47,6 +47,40 @@ display_banner() {
     log_info "Starting initialization process"
 }
 
+# Find script in common locations
+find_script() {
+    local script_name="$1"
+    local script_path=""
+    local search_paths=(
+        "$SETUP_DIR/$script_name"
+        "$SCRIPT_DIR/setup/$script_name"
+        "/root/postgreSQL-Server/setup/$script_name"
+        "$(dirname "$SCRIPT_DIR")/setup/$script_name"
+        "/home/*/postgreSQL-Server/setup/$script_name"
+    )
+    
+    log_debug "Searching for $script_name in common locations..."
+    
+    for path in "${search_paths[@]}"; do
+        if [ -f "$path" ]; then
+            script_path="$path"
+            log_info "Found $script_name at: $script_path"
+            break
+        fi
+    done
+    
+    if [ -z "$script_path" ]; then
+        log_error "Could not find $script_name. Searched in:"
+        for path in "${search_paths[@]}"; do
+            log_error "  - $path"
+        done
+        return 1
+    fi
+    
+    echo "$script_path"
+    return 0
+}
+
 # Execute a script with proper error handling
 execute_script() {
     local script_path="$1"
@@ -56,23 +90,14 @@ execute_script() {
     
     # Check if script exists
     if [ ! -f "$script_path" ]; then
-        # Try to find the script in other common locations
-        for possible_path in "/root/postgreSQL-Server/setup/$script_name" "/home/*/postgreSQL-Server/setup/$script_name" "$SCRIPT_DIR/setup/$script_name" "$(dirname "$SCRIPT_DIR")/setup/$script_name"; do
-            if [ -f "$possible_path" ]; then
-                script_path="$possible_path"
-                log_info "Found script at: $script_path"
-                break
+        # Try to find the script using find_script function
+        script_path=$(find_script "$script_name") || {
+            log_error "Could not find script: $script_name"
+            if [ -n "$success_var" ]; then
+                eval "$success_var=false"
             fi
-        done
-    fi
-    
-    # Check again if we found the script
-    if [ ! -f "$script_path" ]; then
-        log_error "Could not find script: $script_name. Checked common locations."
-        if [ -n "$success_var" ]; then
-            eval "$success_var=false"
-        fi
-        return 1
+            return 1
+        }
     fi
     
     # Ensure script has execute permission
@@ -156,36 +181,17 @@ run_tests() {
 setup_hardware_change_detection() {
   log_info "Setting up hardware change detection service..."
   
-  # Define possible script locations
-  local script_paths=(
-    "$SETUP_DIR/hardware_change_detector.sh"
-    "$SCRIPT_DIR/setup/hardware_change_detector.sh"
-    "/root/postgreSQL-Server/setup/hardware_change_detector.sh"
-    "$(dirname "$SCRIPT_DIR")/setup/hardware_change_detector.sh"
-  )
+  # Find the hardware change detector script
+  local script_path
+  script_path=$(find_script "hardware_change_detector.sh")
   
-  # Find the script in possible locations
-  local script_found=false
-  local script_path=""
-  
-  for path in "${script_paths[@]}"; do
-    if [ -f "$path" ]; then
-      script_path="$path"
-      script_found=true
-      log_info "Found hardware_change_detector.sh at: $script_path"
-      break
-    fi
-  done
-  
-  if [ "$script_found" = true ]; then
+  if [ $? -eq 0 ] && [ -n "$script_path" ]; then
     log_info "Executing hardware_change_detector.sh..."
     bash "$script_path"
-    return $?
+    hw_detector_success=$?
+    return $hw_detector_success
   else
-    log_error "hardware_change_detector.sh not found. Searched in:"
-    for path in "${script_paths[@]}"; do
-      log_error "  - $path"
-    done
+    log_error "hardware_change_detector.sh not found"
     return 1
   fi
 }
@@ -194,36 +200,16 @@ setup_hardware_change_detection() {
 setup_backup_configuration() {
   log_info "Setting up PostgreSQL backup configuration..."
   
-  # Define possible script locations
-  local script_paths=(
-    "$SETUP_DIR/backup_config.sh"
-    "$SCRIPT_DIR/setup/backup_config.sh"
-    "/root/postgreSQL-Server/setup/backup_config.sh"
-    "$(dirname "$SCRIPT_DIR")/setup/backup_config.sh"
-  )
+  # Find the backup configuration script
+  local script_path
+  script_path=$(find_script "backup_config.sh")
   
-  # Find the script in possible locations
-  local script_found=false
-  local script_path=""
-  
-  for path in "${script_paths[@]}"; do
-    if [ -f "$path" ]; then
-      script_path="$path"
-      script_found=true
-      log_info "Found backup_config.sh at: $script_path"
-      break
-    fi
-  done
-  
-  if [ "$script_found" = true ]; then
+  if [ $? -eq 0 ] && [ -n "$script_path" ]; then
     log_info "Executing backup_config.sh..."
     bash "$script_path"
     return $?
   else
-    log_error "backup_config.sh not found. Searched in:"
-    for path in "${script_paths[@]}"; do
-      log_error "  - $path"
-    done
+    log_error "backup_config.sh not found"
     return 1
   fi
 }
