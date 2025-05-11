@@ -1,6 +1,6 @@
 #!/bin/bash
 # init.sh - PostgreSQL server initialization script
-# Part of Milestone 1, 2, 3, 4 & 5
+# Part of Milestone 1, 2, 3, 4, 5 & 6
 # This script updates the Ubuntu server silently and sets up initial environment
 
 # Exit immediately if a command exits with a non-zero status
@@ -32,6 +32,12 @@ source "$SCRIPT_DIR/setup/netdata_config.sh"
 
 # Source SSL Renewal configuration
 source "$SCRIPT_DIR/setup/ssl_renewal.sh"
+
+# Source Dynamic Optimization configuration
+source "$SCRIPT_DIR/setup/dynamic_optimization.sh"
+
+# Source Hardware Change Detector configuration
+source "$SCRIPT_DIR/setup/hardware_change_detector.sh"
 
 
 # Display init banner
@@ -116,6 +122,8 @@ main() {
     local nginx_success=false
     local netdata_success=false
     local ssl_renewal_success=false
+    local dynamic_opt_success=false
+    local hw_detector_success=false
     
     # Setup PostgreSQL and pgbouncer
     log_info "Setting up PostgreSQL and pgbouncer..."
@@ -153,6 +161,37 @@ main() {
         log_error "SSL certificate auto-renewal setup encountered issues, but continuing"
     fi
     
+    # Setup dynamic optimization
+    log_info "Setting up dynamic PostgreSQL optimization..."
+    if [ "${ENABLE_DYNAMIC_OPTIMIZATION:-true}" = true ]; then
+        if command -v psql >/dev/null 2>&1; then
+            log_info "Running initial dynamic optimization..."
+            if main; then
+                log_info "Dynamic optimization completed successfully"
+                dynamic_opt_success=true
+            else
+                log_error "Dynamic optimization encountered issues, but continuing"
+            fi
+        else
+            log_warn "PostgreSQL not installed, skipping dynamic optimization"
+        fi
+    else
+        log_info "Dynamic optimization disabled (set ENABLE_DYNAMIC_OPTIMIZATION=true to enable)"
+    fi
+    
+    # Setup hardware change detector
+    log_info "Setting up hardware change detection service..."
+    if [ "${ENABLE_HARDWARE_CHANGE_DETECTOR:-true}" = true ]; then
+        if main --install; then
+            log_info "Hardware change detector service installed successfully"
+            hw_detector_success=true
+        else
+            log_error "Hardware change detector service installation encountered issues, but continuing"
+        fi
+    else
+        log_info "Hardware change detector disabled (set ENABLE_HARDWARE_CHANGE_DETECTOR=true to enable)"
+    fi
+    
     # Print setup summary
     log_info "-----------------------------------------------"
     log_info "SETUP SUMMARY"
@@ -180,6 +219,18 @@ main() {
         log_info "✓ SSL renewal setup: SUCCESS"
     else
         log_error "✗ SSL renewal setup: FAILED"
+    fi
+    
+    if [ "$dynamic_opt_success" = true ]; then
+        log_info "✓ Dynamic optimization setup: SUCCESS"
+    else
+        log_error "✗ Dynamic optimization setup: FAILED"
+    fi
+    
+    if [ "$hw_detector_success" = true ]; then
+        log_info "✓ Hardware change detector setup: SUCCESS"
+    else
+        log_error "✗ Hardware change detector setup: FAILED"
     fi
     
     log_info "-----------------------------------------------"
