@@ -33,12 +33,8 @@ source "$SCRIPT_DIR/setup/netdata_config.sh"
 # Source SSL Renewal configuration
 source "$SCRIPT_DIR/setup/ssl_renewal.sh"
 
-# Source Dynamic Optimization configuration
-source "$SCRIPT_DIR/setup/dynamic_optimization.sh"
-
-# Source Hardware Change Detector configuration
-source "$SCRIPT_DIR/setup/hardware_change_detector.sh"
-
+# Note: Dynamic optimization and hardware change detector scripts are executed directly 
+# in the main function, not sourced at the top level to avoid function name conflicts
 
 # Display init banner
 display_banner() {
@@ -166,7 +162,9 @@ main() {
     if [ "${ENABLE_DYNAMIC_OPTIMIZATION:-true}" = true ]; then
         if command -v psql >/dev/null 2>&1; then
             log_info "Running initial dynamic optimization..."
-            if main; then
+            
+            # Execute the script directly to avoid function name conflicts
+            if bash "$SCRIPT_DIR/setup/dynamic_optimization.sh"; then
                 log_info "Dynamic optimization completed successfully"
                 dynamic_opt_success=true
             else
@@ -182,7 +180,8 @@ main() {
     # Setup hardware change detector
     log_info "Setting up hardware change detection service..."
     if [ "${ENABLE_HARDWARE_CHANGE_DETECTOR:-true}" = true ]; then
-        if main --install; then
+        # Execute the script directly with --install argument
+        if bash "$SCRIPT_DIR/setup/hardware_change_detector.sh" --install; then
             log_info "Hardware change detector service installed successfully"
             hw_detector_success=true
         else
