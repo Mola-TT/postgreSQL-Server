@@ -42,6 +42,7 @@ test_header() {
 
 # Helper function to install email tools if not available
 install_email_tools() {
+  local skip_test_email=${1:-false}
   log_info "Installing email sending tools..."
   
   # Check if we're running as root
@@ -107,9 +108,12 @@ EOF
   # Redirect all output to a temporary file to avoid cluttering the test output
   local msmtp_test_log=$(mktemp)
   
-  # Create a proper test email with subject and content
-  local test_email_file=$(mktemp)
-  cat > "$test_email_file" << EOF
+  if [ "$skip_test_email" = "true" ]; then
+    log_info "Skipping test email as it will be sent by the test suite"
+  else
+    # Create a proper test email with subject and content
+    local test_email_file=$(mktemp)
+    cat > "$test_email_file" << EOF
 From: ${EMAIL_SENDER:-postgres@localhost}
 To: ${EMAIL_RECIPIENT:-root}
 Subject: ${TEST_EMAIL_SUBJECT:-"[TEST] PostgreSQL Server Email Test"}
@@ -122,23 +126,27 @@ Date: $(date)
 
 If you received this email, it means the email configuration is working correctly.
 EOF
-  
-  # Send the test email using msmtp
-  cat "$test_email_file" | msmtp -a default --debug ${EMAIL_RECIPIENT:-root} > "$msmtp_test_log" 2>&1 || {
-    log_warn "msmtp test failed. Email sending may not work correctly."
-    log_info "msmtp test output (last 10 lines):"
-    tail -10 "$msmtp_test_log" | while read line; do
-      log_info "msmtp: $line"
-    done
-  }
-  
-  # Check if the test was successful
-  if grep -q "250 OK" "$msmtp_test_log"; then
-    log_info "msmtp test email sent successfully"
+    
+    # Send the test email using msmtp
+    cat "$test_email_file" | msmtp -a default --debug ${EMAIL_RECIPIENT:-root} > "$msmtp_test_log" 2>&1 || {
+      log_warn "msmtp test failed. Email sending may not work correctly."
+      log_info "msmtp test output (last 10 lines):"
+      tail -10 "$msmtp_test_log" | while read line; do
+        log_info "msmtp: $line"
+      done
+    }
+    
+    # Check if the test was successful
+    if grep -q "250 OK" "$msmtp_test_log"; then
+      log_info "msmtp test email sent successfully"
+    fi
+    
+    # Clean up the test email file
+    rm -f "$test_email_file" 2>/dev/null || true
   fi
   
-  # Clean up
-  rm -f "$msmtp_test_log" "$test_email_file" 2>/dev/null || true
+  # Clean up the log file
+  rm -f "$msmtp_test_log" 2>/dev/null || true
   
   log_info "Email tools installation completed."
   return 0
@@ -337,9 +345,10 @@ REPORTEOF
 main() {
   log_info "Starting email notification test suite..."
   
-  # Always install email tools for testing
+  # Always install email tools for testing, but skip sending test email
+  # since we'll send a proper one in the test suite
   log_info "Installing and configuring email sending tools..."
-  install_email_tools
+  install_email_tools true
   
   # Check if msmtp is available after installation
   if command -v msmtp >/dev/null 2>&1; then
