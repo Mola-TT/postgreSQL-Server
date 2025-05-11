@@ -12,92 +12,69 @@ source "$PG_SCRIPT_DIR/../lib/pg_extract_hash.sh"
 install_postgresql() {
   log_info "Installing PostgreSQL..."
   
-  # Check if postgresql-common is installed
-  if ! dpkg -l | grep -q postgresql-common; then
-    log_info "Installing postgresql-common from default repositories..."
-    # Use our retry function to handle package manager locks
-    apt_install_with_retry "postgresql-common" 5 30
+  # Add PostgreSQL repository
+  local os_codename
+  
+  # Install postgresql-common first (needed for pg_lsclusters)
+  log_info "Installing postgresql-common from default repositories..."
+  
+  if ! install_package_with_retry "postgresql-common" 5 30; then
+    log_error "Failed to install postgresql-common"
+    return 1
   fi
   
-  # Create directory for PostgreSQL repository key with proper permissions
-  log_info "Adding PostgreSQL repository..."
-  mkdir -p /usr/share/postgresql-common/pgdg
-  chmod 755 /usr/share/postgresql-common/pgdg
-  local keyring_file="/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc"
+  # Get Ubuntu codename
+  os_codename=$(lsb_release -cs 2>/dev/null || echo "")
+  if [ -z "$os_codename" ]; then
+    # Try to get it from /etc/os-release
+    if [ -f /etc/os-release ]; then
+      os_codename=$(grep VERSION_CODENAME /etc/os-release | cut -d= -f2 | tr -d '"')
+    fi
+  fi
   
-  # Download the repository key
+  if [ -z "$os_codename" ]; then
+    log_warn "Could not determine OS codename, using 'focal' as default"
+    os_codename="focal"
+  fi
+  
+  log_info "Adding PostgreSQL repository..."
+  
+  # Download PostgreSQL repository key
   log_info "Downloading PostgreSQL repository key..."
-  if ! wget --quiet -O "$keyring_file" https://www.postgresql.org/media/keys/ACCC4CF8.asc; then
+  if ! curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg > /dev/null 2>&1; then
     log_error "Failed to download PostgreSQL repository key"
     return 1
   fi
   
-  # Set proper permissions on the key file
-  chmod 644 "$keyring_file"
-  
-  # Create repository configuration using VERSION_CODENAME from os-release
-  . /etc/os-release
-  if [ -z "$VERSION_CODENAME" ]; then
-    log_error "Could not determine OS version codename. Check /etc/os-release or install lsb-release."
-    return 1
-  fi
-  
-  # Check if VERSION_CODENAME is supported
-  local supported_codenames="focal jammy noble oracular plucky"
-  if ! echo "$supported_codenames" | grep -q "$VERSION_CODENAME"; then
-    log_warn "Ubuntu $VERSION_CODENAME might not be officially supported by the PostgreSQL repository"
-    log_warn "Continuing anyway, but installation might fail"
-  fi
-  
-  # Add PostgreSQL repository with signed-by method
+  # Create repository configuration file
   log_info "Creating repository configuration file..."
-  echo "deb [signed-by=$keyring_file] https://apt.postgresql.org/pub/repos/apt $VERSION_CODENAME-pgdg main" > /etc/apt/sources.list.d/pgdg.list
-  log_info "Successfully added PostgreSQL repository for $VERSION_CODENAME"
+  echo "deb http://apt.postgresql.org/pub/repos/apt/ ${os_codename}-pgdg main" > /etc/apt/sources.list.d/pgdg.list
   
-  # Check network connectivity before updating package lists
-  if ! ping -c 1 apt.postgresql.org > /dev/null 2>&1; then
-    log_warn "Network connectivity to apt.postgresql.org appears to be unavailable"
-    log_warn "Continuing anyway, but apt update may fail if network is unreachable"
-  fi
+  log_info "Successfully added PostgreSQL repository for ${os_codename}"
   
-  # Update package lists with better error capture
+  # Update package lists
   log_info "Updating package lists..."
   if ! apt_update_with_retry 5 30; then
-    # Try running the official PostgreSQL repository setup script as a fallback
-    if [ -f "/usr/share/postgresql-common/pgdg/apt.postgresql.org.sh" ]; then
-      log_warn "Trying fallback method: Running the official PostgreSQL repository setup script"
-      if ! bash /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh; then
-        log_error "Official setup script also failed. Cannot continue with PostgreSQL installation."
-        return 1
-      else
-        log_info "Successfully configured repository using official script"
-        # Try updating package lists again
-        if ! apt_update_with_retry 5 30; then
-          log_error "Still failed to update package lists after official script."
-          return 1
-        fi
-      fi
-    else
-      log_error "No fallback method available. Cannot continue with PostgreSQL installation."
-      return 1
-    fi
+    log_error "Failed to update package lists"
+    return 1
   fi
   
   # Install PostgreSQL
   log_info "Installing PostgreSQL packages..."
-  # Use our retry function for apt installation
-  if ! apt_install_with_retry "postgresql postgresql-contrib" 5 30; then
+  
+  if ! install_package_with_retry "postgresql postgresql-contrib" 5 30; then
     log_error "Failed to install PostgreSQL packages after multiple retries"
     return 1
   fi
   
-  # Ensure PostgreSQL is enabled and started
+  # Enable and start PostgreSQL service
   log_info "Enabling and starting PostgreSQL service..."
   systemctl enable postgresql > /dev/null 2>&1
-  if ! systemctl start postgresql > /dev/null 2>&1; then
-    log_error "Failed to start PostgreSQL service"
-    log_warn "Checking PostgreSQL status..."
-    systemctl status postgresql
+  systemctl start postgresql > /dev/null 2>&1
+  
+  # Check if PostgreSQL service is running
+  if ! systemctl is-active --quiet postgresql; then
+    log_error "PostgreSQL service failed to start"
     return 1
   fi
   
@@ -108,10 +85,10 @@ install_postgresql() {
 install_pgbouncer() {
   log_info "Installing pgbouncer..."
   
-  # Install pgbouncer package with noninteractive frontend and suppressed output
-  export DEBIAN_FRONTEND=noninteractive
-  if ! apt-get install -y -qq pgbouncer > /dev/null 2>&1; then
-    log_error "Failed to install pgbouncer"
+  # Install pgbouncer package using the retry mechanism
+  # Parameters: package name, max retries, wait time between retries, silent mode
+  if ! apt_install_with_retry "pgbouncer" 5 30 true; then
+    log_error "Failed to install pgbouncer after multiple attempts"
     return 1
   fi
   
