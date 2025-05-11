@@ -1,6 +1,7 @@
 #!/bin/bash
 # test_ssl_renewal.sh - Tests SSL certificate renewal configuration
 # Part of Milestone 5
+# NOTE: Run this script after test_pg_connection.sh and test_netdata.sh for correct test sequence.
 
 # Exit on error
 set -e
