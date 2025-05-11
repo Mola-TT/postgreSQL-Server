@@ -106,7 +106,25 @@ EOF
   log_info "Testing msmtp configuration..."
   # Redirect all output to a temporary file to avoid cluttering the test output
   local msmtp_test_log=$(mktemp)
-  echo "This is a test email from msmtp" | msmtp -a default --debug $EMAIL_RECIPIENT > "$msmtp_test_log" 2>&1 || {
+  
+  # Create a proper test email with subject and content
+  local test_email_file=$(mktemp)
+  cat > "$test_email_file" << EOF
+From: ${EMAIL_SENDER:-postgres@localhost}
+To: ${EMAIL_RECIPIENT:-root}
+Subject: ${TEST_EMAIL_SUBJECT:-"[TEST] PostgreSQL Server Email Test"}
+Content-Type: text/plain; charset=UTF-8
+
+This is a test email from the PostgreSQL Server email configuration.
+
+Server: $(hostname -f)
+Date: $(date)
+
+If you received this email, it means the email configuration is working correctly.
+EOF
+  
+  # Send the test email using msmtp
+  cat "$test_email_file" | msmtp -a default --debug ${EMAIL_RECIPIENT:-root} > "$msmtp_test_log" 2>&1 || {
     log_warn "msmtp test failed. Email sending may not work correctly."
     log_info "msmtp test output (last 10 lines):"
     tail -10 "$msmtp_test_log" | while read line; do
@@ -120,7 +138,7 @@ EOF
   fi
   
   # Clean up
-  rm -f "$msmtp_test_log" 2>/dev/null || true
+  rm -f "$msmtp_test_log" "$test_email_file" 2>/dev/null || true
   
   log_info "Email tools installation completed."
   return 0
