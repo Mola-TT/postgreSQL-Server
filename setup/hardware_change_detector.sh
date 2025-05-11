@@ -108,8 +108,22 @@ collect_hardware_specs() {
       fi
     fi
   fi
+
+  # Method 5: Try to find pg_hba.conf file and use its directory
+  if [ -z "$data_directory" ] || [ ! -d "$data_directory" ]; then
+    local hba_file
+    
+    # Search for pg_hba.conf in various locations
+    for possible_hba in /etc/postgresql/*/main/pg_hba.conf /var/lib/postgresql/*/main/pg_hba.conf /var/lib/pgsql/*/data/pg_hba.conf /usr/local/pgsql/data/pg_hba.conf; do
+      if [ -f "$possible_hba" ]; then
+        hba_file="$possible_hba"
+        data_directory=$(dirname "$hba_file")
+        break
+      fi
+    done
+  fi
   
-  # Method 5: Use PostgreSQL directory if data directory wasn't found
+  # Method 6: Use PostgreSQL directory if data directory wasn't found
   if [ -z "$data_directory" ] || [ ! -d "$data_directory" ]; then
     # If no specific data directory found, use the general PostgreSQL directory
     if [ -d "/var/lib/postgresql" ]; then
@@ -123,18 +137,47 @@ collect_hardware_specs() {
   fi
   
   # Get disk size using df with better error handling
-  # Try multiple formats to ensure compatibility with different df implementations
-  if ! disk_size_kb=$(df -P -k "$data_directory" 2>/dev/null | awk 'NR==2 {print $2}'); then
-    if ! disk_size_kb=$(df -k "$data_directory" 2>/dev/null | awk 'NR==2 {print $2}'); then
-      # Try parent directory
-      parent_dir=$(dirname "$data_directory")
+  # Function to safely run df command with fallbacks
+  get_disk_size() {
+    local dir="$1"
+    local disk_size=""
+    
+    # Try with -P flag first (POSIX format)
+    if ! disk_size=$(df -P -k "$dir" 2>/dev/null | awk 'NR==2 {print $2}'); then
+      # Try without -P flag
+      if ! disk_size=$(df -k "$dir" 2>/dev/null | awk 'NR==2 {print $2}'); then
+        # Return empty to indicate failure
+        echo ""
+        return 1
+      fi
+    fi
+    
+    # Validate that disk_size is a number
+    if [[ ! "$disk_size" =~ ^[0-9]+$ ]]; then
+      echo ""
+      return 1
+    fi
+    
+    echo "$disk_size"
+    return 0
+  }
+  
+  # Try multiple directories with fallbacks
+  disk_size_kb=$(get_disk_size "$data_directory")
+  
+  # If first attempt failed, try parent directory
+  if [ -z "$disk_size_kb" ]; then
+    local parent_dir=$(dirname "$data_directory")
+    disk_size_kb=$(get_disk_size "$parent_dir")
+    
+    # If parent directory failed, try grandparent directory
+    if [ -z "$disk_size_kb" ]; then
+      local grandparent_dir=$(dirname "$parent_dir")
+      disk_size_kb=$(get_disk_size "$grandparent_dir")
       
-      if ! disk_size_kb=$(df -P -k "$parent_dir" 2>/dev/null | awk 'NR==2 {print $2}'); then
-        if ! disk_size_kb=$(df -k "$parent_dir" 2>/dev/null | awk 'NR==2 {print $2}'); then
-          # Try two levels up if still failing
-          grandparent_dir=$(dirname "$parent_dir")
-          disk_size_kb=$(df -k "$grandparent_dir" 2>/dev/null | awk 'NR==2 {print $2}' || echo "0")
-        fi
+      # If all attempts failed, use root directory
+      if [ -z "$disk_size_kb" ]; then
+        disk_size_kb=$(get_disk_size "/" || echo "0")
       fi
     fi
   fi
