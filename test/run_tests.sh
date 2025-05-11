@@ -37,6 +37,7 @@ run_all_tests() {
         "$TEST_DIR/test_pg_connection.sh"
         "$TEST_DIR/test_netdata.sh"
         "$TEST_DIR/test_ssl_renewal.sh"
+        "$TEST_DIR/test_dynamic_optimization.sh"
     )
     
     for test_script in "${ordered_tests[@]}"; do
