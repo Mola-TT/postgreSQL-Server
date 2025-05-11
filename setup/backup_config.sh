@@ -490,6 +490,14 @@ configure_backup_monitoring() {
     return 0
   fi
   
+  # Check if jq is installed (needed for JSON parsing in the script)
+  if ! command -v jq >/dev/null 2>&1; then
+    log_info "Installing jq for JSON parsing in backup monitoring..."
+    if ! install_package_with_retry "jq" 3 10; then
+      log_warn "Failed to install jq. Backup monitoring may not work correctly."
+    fi
+  fi
+  
   # Determine Netdata plugins directory
   local netdata_plugins_dir=""
   local possible_plugin_dirs=(
@@ -509,8 +517,21 @@ configure_backup_monitoring() {
   
   if [ -z "$netdata_plugins_dir" ]; then
     log_warn "Netdata plugins directory not found, creating default location"
-    netdata_plugins_dir="/usr/lib/netdata/plugins.d"
-    mkdir -p "$netdata_plugins_dir"
+    # Try to create the most common location
+    for dir in "${possible_plugin_dirs[@]}"; do
+      if mkdir -p "$dir" 2>/dev/null; then
+        netdata_plugins_dir="$dir"
+        log_info "Created Netdata plugins directory at: $netdata_plugins_dir"
+        break
+      fi
+    done
+    
+    # If still not found, use the first option as fallback
+    if [ -z "$netdata_plugins_dir" ]; then
+      netdata_plugins_dir="/usr/lib/netdata/plugins.d"
+      mkdir -p "$netdata_plugins_dir"
+      log_info "Created fallback Netdata plugins directory at: $netdata_plugins_dir"
+    fi
   fi
   
   # Create backup status check script
@@ -531,6 +552,12 @@ if ! command -v pgbackrest >/dev/null 2>&1; then
   exit 1
 fi
 
+# Check if jq is installed
+if ! command -v jq >/dev/null 2>&1; then
+  echo "ERROR: jq is required for this plugin" >&2
+  exit 1
+fi
+
 # Configuration
 BACKUP_LOG_DIR="$BACKUP_DIR/logs"
 INTERVAL=60  # Update interval in seconds
@@ -538,10 +565,10 @@ INTERVAL=60  # Update interval in seconds
 # Function to check backup status
 check_backup_status() {
   # Get latest full backup timestamp
-  LATEST_FULL=$(pgbackrest info --output=json | jq -r '.[0].backup[] | select(.type=="full") | .timestamp' | sort -r | head -n 1)
+  LATEST_FULL=$(pgbackrest info --output=json 2>/dev/null | jq -r '.[0].backup[] | select(.type=="full") | .timestamp' 2>/dev/null | sort -r | head -n 1)
   
   # Get latest incremental backup timestamp
-  LATEST_INCR=$(pgbackrest info --output=json | jq -r '.[0].backup[] | select(.type=="incr") | .timestamp' | sort -r | head -n 1)
+  LATEST_INCR=$(pgbackrest info --output=json 2>/dev/null | jq -r '.[0].backup[] | select(.type=="incr") | .timestamp' 2>/dev/null | sort -r | head -n 1)
   
   # Calculate time since last full backup (in seconds)
   if [ -n "$LATEST_FULL" ]; then
@@ -592,14 +619,6 @@ EOF
   # Set proper permissions
   chmod 755 "$backup_status_script"
   
-  # Check if jq is installed (needed for JSON parsing in the script)
-  if ! command -v jq >/dev/null 2>&1; then
-    log_info "Installing jq for JSON parsing in backup monitoring..."
-    if ! install_package_with_retry "jq" 3 10; then
-      log_warn "Failed to install jq. Backup monitoring may not work correctly."
-    fi
-  fi
-  
   # Create Netdata configuration for backup monitoring
   local netdata_conf_dir="/etc/netdata/health.d"
   local netdata_conf="$netdata_conf_dir/pg_backup_checks.conf"
@@ -647,7 +666,12 @@ EOF
   # Restart Netdata to apply changes
   if systemctl is-active --quiet netdata; then
     log_info "Restarting Netdata to apply backup monitoring configuration..."
-    systemctl restart netdata > /dev/null 2>&1 || log_warn "Failed to restart Netdata"
+    if systemctl restart netdata > /dev/null 2>&1; then
+      log_info "Netdata restarted successfully"
+    else
+      log_warn "Failed to restart Netdata. Attempting to start if stopped..."
+      systemctl start netdata > /dev/null 2>&1 || log_warn "Failed to start Netdata service"
+    fi
   else
     log_warn "Netdata service not running, configuration will be applied when Netdata starts"
   fi
