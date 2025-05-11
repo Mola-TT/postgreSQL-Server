@@ -85,12 +85,12 @@ log() {
       # Calculate continuing lines indentation
       local indent=$(printf "%${prefix_len}s" "")
       
-      # Print remaining message with proper indentation
+      # Print remaining message with proper indentation (no continuation character)
       local remaining_msg="${message:$max_msg_len}"
       while [ ${#remaining_msg} -gt 0 ]; do
         local line_msg="${remaining_msg:0:$max_msg_len}"
-        echo -e "${indent}${WHITE}↪ ${line_msg}${RESET}"
-        echo "${indent}↪ ${line_msg}" >> ${LOG_FILE}
+        echo -e "${indent}${WHITE}${line_msg}${RESET}"
+        echo "${indent}${line_msg}" >> ${LOG_FILE}
         remaining_msg="${remaining_msg:${#line_msg}}"
       done
     fi
