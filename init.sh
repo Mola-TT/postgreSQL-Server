@@ -44,6 +44,42 @@ display_banner() {
     log_info "Starting initialization process"
 }
 
+# Execute a script with proper error handling
+execute_script() {
+    local script_path="$1"
+    local script_args="$2"
+    local success_var="$3"
+    local script_name=$(basename "$script_path")
+    
+    # Check if script exists
+    if [ ! -f "$script_path" ]; then
+        # Try to find the script in other common locations
+        for possible_path in "/root/postgreSQL-Server/setup/$script_name" "/home/*/postgreSQL-Server/setup/$script_name"; do
+            if [ -f "$possible_path" ]; then
+                script_path="$possible_path"
+                log_info "Found script at: $script_path"
+                break
+            fi
+        done
+    fi
+    
+    # Ensure script has execute permission
+    chmod +x "$script_path" 2>/dev/null || log_warn "Failed to set executable permission on $script_name"
+    
+    # Execute the script
+    log_info "Executing $script_name..."
+    if "$script_path" $script_args; then
+        # Only set the success variable if one was provided
+        if [ -n "$success_var" ]; then
+            eval "$success_var=true"
+        fi
+        return 0
+    else
+        log_error "$script_name encountered issues, but continuing with other setup steps"
+        return 1
+    fi
+}
+
 # Run tests after setup
 run_tests() {
     log_info "Running test suite..."
@@ -125,7 +161,6 @@ main() {
     log_info "Setting up PostgreSQL and pgbouncer..."
     if setup_postgresql; then
         pg_success=true
-        # Don't duplicate success message, already output by the component script
     else
         log_error "PostgreSQL setup encountered issues, but continuing with other setup steps"
     fi
@@ -134,7 +169,6 @@ main() {
     log_info "Setting up Nginx for subdomain mapping..."
     if setup_nginx; then
         nginx_success=true
-        # Don't duplicate success message, already output by the component script
     else
         log_error "Nginx setup encountered issues, but continuing with other setup steps"
     fi
@@ -143,7 +177,6 @@ main() {
     log_info "Setting up Netdata monitoring..."
     if setup_netdata; then
         netdata_success=true
-        # Don't duplicate success message, already output by the component script
     else
         log_error "Netdata setup encountered issues, but continuing with other setup steps"
     fi
@@ -152,53 +185,16 @@ main() {
     log_info "Setting up SSL certificate auto-renewal..."
     if setup_ssl_renewal; then
         ssl_renewal_success=true
-        # Don't duplicate success message, already output by the component script
     else
         log_error "SSL certificate auto-renewal setup encountered issues, but continuing"
     fi
     
     # Setup dynamic optimization
-    log_info "Setting up dynamic PostgreSQL optimization..."
     if [ "${ENABLE_DYNAMIC_OPTIMIZATION:-true}" = true ]; then
         if command -v psql >/dev/null 2>&1; then
-            log_info "Running initial dynamic optimization..."
-            
-            # Check if script exists
-            local dyn_opt_script="$SCRIPT_DIR/setup/dynamic_optimization.sh"
-            if [ ! -f "$dyn_opt_script" ]; then
-                # Try to find the script in other common locations
-                for possible_path in "/root/postgreSQL-Server/setup/dynamic_optimization.sh" "/home/*/postgreSQL-Server/setup/dynamic_optimization.sh"; do
-                    if [ -f "$possible_path" ]; then
-                        dyn_opt_script="$possible_path"
-                        log_info "Found dynamic optimization script at: $dyn_opt_script"
-                        break
-                    fi
-                done
-            fi
-            
-            # Ensure script has execute permission
-            chmod +x "$dyn_opt_script" 2>/dev/null || log_warn "Failed to set executable permission on dynamic_optimization.sh"
-            
-            # Execute the script in a completely separate process to avoid any variable or function conflicts
-            # We create a temporary wrapper script to ensure complete isolation
-            TEMP_SCRIPT=$(mktemp)
-            cat > "$TEMP_SCRIPT" << EOF
-#!/bin/bash
-# Temporary wrapper to execute dynamic_optimization script
-"$dyn_opt_script" "$@"
-exit \$?
-EOF
-            chmod +x "$TEMP_SCRIPT"
-            
-            if "$TEMP_SCRIPT"; then
-                dynamic_opt_success=true
-                # Don't duplicate success message, already output by the component script
-            else
-                log_error "Dynamic optimization encountered issues, but continuing"
-            fi
-            
-            # Clean up the temporary script
-            rm -f "$TEMP_SCRIPT"
+            log_info "Setting up dynamic PostgreSQL optimization..."
+            # Execute dynamic_optimization.sh
+            execute_script "$SCRIPT_DIR/setup/dynamic_optimization.sh" "" "dynamic_opt_success"
         else
             log_warn "PostgreSQL not installed, skipping dynamic optimization"
         fi
@@ -207,44 +203,10 @@ EOF
     fi
     
     # Setup hardware change detector
-    log_info "Setting up hardware change detection service..."
     if [ "${ENABLE_HARDWARE_CHANGE_DETECTOR:-true}" = true ]; then
-        # Check if script exists
-        local hw_detector_script="$SCRIPT_DIR/setup/hardware_change_detector.sh"
-        if [ ! -f "$hw_detector_script" ]; then
-            # Try to find the script in other common locations
-            for possible_path in "/root/postgreSQL-Server/setup/hardware_change_detector.sh" "/home/*/postgreSQL-Server/setup/hardware_change_detector.sh"; do
-                if [ -f "$possible_path" ]; then
-                    hw_detector_script="$possible_path"
-                    log_info "Found hardware change detector script at: $hw_detector_script"
-                    break
-                fi
-            done
-        fi
-        
-        # Ensure script has execute permission
-        chmod +x "$hw_detector_script" 2>/dev/null || log_warn "Failed to set executable permission on hardware_change_detector.sh"
-        
-        # Execute the script in a completely separate process to avoid any variable or function conflicts
-        # We create a temporary wrapper script to ensure complete isolation
-        TEMP_SCRIPT=$(mktemp)
-        cat > "$TEMP_SCRIPT" << EOF
-#!/bin/bash
-# Temporary wrapper to execute hardware_change_detector script
-"$hw_detector_script" --install
-exit \$?
-EOF
-        chmod +x "$TEMP_SCRIPT"
-        
-        if "$TEMP_SCRIPT"; then
-            hw_detector_success=true
-            # Don't duplicate success message, already output by the component script
-        else
-            log_error "Hardware change detector service installation encountered issues, but continuing"
-        fi
-        
-        # Clean up the temporary script
-        rm -f "$TEMP_SCRIPT"
+        log_info "Setting up hardware change detection service..."
+        # Execute hardware_change_detector.sh with --install argument
+        execute_script "$SCRIPT_DIR/setup/hardware_change_detector.sh" "--install" "hw_detector_success"
     else
         log_info "Hardware change detector disabled (set ENABLE_HARDWARE_CHANGE_DETECTOR=true to enable)"
     fi
