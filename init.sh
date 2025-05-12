@@ -62,9 +62,22 @@ find_script() {
     log_debug "Searching for $script_name in common locations..."
     
     for path in "${search_paths[@]}"; do
-        if [ -f "$path" ]; then
+        log_debug "Checking path: $path"
+        if [ -f "$path" ] && [ -r "$path" ]; then
             script_path="$path"
             log_info "Found $script_name at: $script_path"
+            
+            # Verify that the file is readable and not empty
+            if [ ! -s "$script_path" ]; then
+                log_warn "Found $script_name at $script_path but file is empty"
+                continue
+            fi
+            
+            # Quick check of file content - should be a bash script
+            if ! head -n1 "$script_path" | grep -q "^#!" 2>/dev/null; then
+                log_warn "Found $script_name at $script_path but it may not be a valid script (no shebang found)"
+            fi
+            
             break
         fi
     done
@@ -73,6 +86,13 @@ find_script() {
         log_error "Could not find $script_name. Searched in:"
         for path in "${search_paths[@]}"; do
             log_error "  - $path"
+            if [ -e "$path" ]; then
+                if [ ! -f "$path" ]; then
+                    log_error "     (exists but is not a regular file)"
+                elif [ ! -r "$path" ]; then
+                    log_error "     (exists but is not readable)"
+                fi
+            fi
         done
         return 1
     fi
@@ -100,18 +120,29 @@ execute_script() {
         }
     fi
     
+    # Double-check that the file actually exists and is readable
+    if [ ! -f "$script_path" ] || [ ! -r "$script_path" ]; then
+        log_error "Script $script_name found at $script_path but is not accessible"
+        if [ -n "$success_var" ]; then
+            eval "$success_var=false"
+        fi
+        return 1
+    fi
+    
     # Ensure script has execute permission
     chmod +x "$script_path" 2>/dev/null
     if [ $? -ne 0 ]; then
         log_warn "Failed to set executable permission on $script_name. Will try with bash explicitly."
         # Try to execute with bash explicitly if we can't set execute permission
+        log_info "Executing $script_name with bash explicitly..."
         if bash "$script_path" $script_args; then
             if [ -n "$success_var" ]; then
                 eval "$success_var=true"
             fi
             return 0
         else
-            log_error "$script_name encountered issues, but continuing with other setup steps"
+            local exit_code=$?
+            log_error "$script_name encountered issues (exit code: $exit_code), but continuing with other setup steps"
             if [ -n "$success_var" ]; then
                 eval "$success_var=false"
             fi
@@ -141,40 +172,58 @@ execute_script() {
 run_tests() {
     log_info "Running test suite..."
     
-    # Check multiple potential locations for the test runner
-    local test_script=""
-    local possible_locations=(
-        "$SCRIPT_DIR/test/run_tests.sh"
-        "/home/tom/postgreSQL-Server/test/run_tests.sh"
-        "$(dirname "$SCRIPT_DIR")/test/run_tests.sh"
-    )
+    # Try to find the test runner using find_script
+    local script_path
+    script_path=$(find_script "run_tests.sh")
     
-    # Find the first existing test script
-    for location in "${possible_locations[@]}"; do
-        if [ -f "$location" ]; then
-            test_script="$location"
-            log_info "Found test script at: $test_script"
-            break
-        fi
-    done
-    
-    if [ -z "$test_script" ]; then
-        log_error "Could not find test script. Checked locations:"
+    if [ $? -ne 0 ] || [ -z "$script_path" ]; then
+        # Fall back to checking common test locations
+        local possible_locations=(
+            "$SCRIPT_DIR/test/run_tests.sh"
+            "/root/postgreSQL-Server/test/run_tests.sh" 
+            "$(dirname "$SCRIPT_DIR")/test/run_tests.sh"
+            "/home/*/postgreSQL-Server/test/run_tests.sh"
+        )
+        
+        log_info "Searching for test runner in specific test locations..."
+        # Find the first existing test script
         for location in "${possible_locations[@]}"; do
-            log_error "  - $location"
+            log_debug "Checking for test runner at: $location"
+            if [ -f "$location" ] && [ -r "$location" ]; then
+                script_path="$location"
+                log_info "Found test runner at: $script_path"
+                break
+            fi
         done
+    fi
+    
+    if [ -z "$script_path" ] || [ ! -f "$script_path" ]; then
+        log_error "Could not find test runner script 'run_tests.sh'"
         return 1
     fi
     
     # Make sure the test runner is executable
-    chmod +x "$test_script" 2>/dev/null || log_warn "Failed to set executable permission on test script"
+    chmod +x "$script_path" 2>/dev/null
+    if [ $? -ne 0 ]; then
+        log_warn "Failed to set executable permission on test runner. Will try with bash explicitly."
+        log_info "Executing test runner with bash explicitly..."
+        if bash "$script_path"; then
+            log_info "Tests executed with bash"
+        else
+            log_warn "Some tests failed. Please check the logs for details."
+        fi
+        return $?
+    fi
     
     # Run the tests
-    if "$test_script"; then
-        : # Do not print 'All tests passed successfully!' here, let the test runner handle it
+    log_info "Executing test runner: $script_path"
+    if "$script_path"; then
+        log_info "Tests executed successfully"
     else
         log_warn "Some tests failed. Please check the logs for details."
     fi
+    
+    return $?
 }
 
 # Setup hardware change detection service
@@ -186,7 +235,17 @@ setup_hardware_change_detection() {
   script_path=$(find_script "hardware_change_detector.sh")
   
   if [ $? -eq 0 ] && [ -n "$script_path" ]; then
+    # Double-check that the file actually exists
+    if [ ! -f "$script_path" ]; then
+      log_error "Script found at $script_path but file does not exist"
+      return 1
+    fi
+    
+    # Ensure the script is executable
+    chmod +x "$script_path" 2>/dev/null || log_warn "Failed to set executable permission, will use bash explicitly"
+    
     log_info "Executing hardware_change_detector.sh..."
+    # Use bash explicitly to execute the script with proper quoting to handle spaces in path
     bash "$script_path"
     hw_detector_success=$?
     return $hw_detector_success
@@ -205,7 +264,17 @@ setup_backup_configuration() {
   script_path=$(find_script "backup_config.sh")
   
   if [ $? -eq 0 ] && [ -n "$script_path" ]; then
+    # Double-check that the file actually exists
+    if [ ! -f "$script_path" ]; then
+      log_error "Script found at $script_path but file does not exist"
+      return 1
+    fi
+    
+    # Ensure the script is executable
+    chmod +x "$script_path" 2>/dev/null || log_warn "Failed to set executable permission, will use bash explicitly"
+    
     log_info "Executing backup_config.sh..."
+    # Use bash explicitly to execute the script with proper quoting to handle spaces in path
     bash "$script_path"
     return $?
   else
