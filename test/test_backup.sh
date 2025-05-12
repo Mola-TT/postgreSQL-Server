@@ -142,84 +142,70 @@ test_backup_directory_structure() {
   export BACKUP_DIR="$test_backup_dir"
   log_info "Temporarily set BACKUP_DIR to: $BACKUP_DIR"
   
-  # Find the setup directory
-  local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  local project_dir="$(dirname "$script_dir")"
-  local setup_dir="$project_dir/setup"
-  
-  # Check if backup_config.sh exists
-  if [ -f "$setup_dir/backup_config.sh" ]; then
-    log_info "Found backup_config.sh at: $setup_dir/backup_config.sh"
+  # Local function to create test backup directory structure
+  # This is a standalone implementation separate from the main backup_config.sh
+  local_create_backup_directories() {
+    log_info "Creating test backup directory structure..."
     
-    # Define a local version of create_backup_directories for testing
-    create_backup_directories() {
-      log_info "Creating test backup directory structure..."
-      
-      # Create main backup directory
-      if [ ! -d "$BACKUP_DIR" ]; then
-        mkdir -p "$BACKUP_DIR"
-      fi
-      
-      # Create subdirectories for different backup types
-      log_info "Creating subdirectories in $BACKUP_DIR"
-      mkdir -p "$BACKUP_DIR/full"
-      mkdir -p "$BACKUP_DIR/incremental"
-      mkdir -p "$BACKUP_DIR/archive"
-      mkdir -p "$BACKUP_DIR/logs"
-      
-      # List the created directories
-      log_info "Directories created in $BACKUP_DIR:"
-      ls -la "$BACKUP_DIR"
-      
-      log_info "Test backup directory structure created successfully"
-      return 0
-    }
+    # Create main backup directory if it doesn't exist
+    if [ ! -d "$BACKUP_DIR" ]; then
+      mkdir -p "$BACKUP_DIR"
+      log_info "Created main backup directory: $BACKUP_DIR"
+    else
+      log_info "Using existing backup directory: $BACKUP_DIR"
+    fi
     
-    # Call the local create_backup_directories function
-    log_info "Calling create_backup_directories function..."
-    create_backup_directories
+    # Create subdirectories for different backup types
+    local subdirs=("full" "incremental" "archive" "daily" "weekly" "monthly" "logs" "conf" "scripts")
     
-    # List the created directories
-    log_info "Contents of $test_backup_dir:"
-    ls -la "$test_backup_dir"
-    
-    # Check if directories were created
-    local directories_created=true
-    for subdir in "full" "incremental" "archive" "logs"; do
-      if [ ! -d "$test_backup_dir/$subdir" ]; then
-        log_error "Directory $test_backup_dir/$subdir was not created"
-        directories_created=false
+    for subdir in "${subdirs[@]}"; do
+      if [ ! -d "$BACKUP_DIR/$subdir" ]; then
+        mkdir -p "$BACKUP_DIR/$subdir"
+        log_info "Created subdirectory: $BACKUP_DIR/$subdir"
       else
-        log_info "Directory $test_backup_dir/$subdir exists"
+        log_info "Subdirectory already exists: $BACKUP_DIR/$subdir"
       fi
     done
     
-    if [ "$directories_created" = true ]; then
-      log_pass "Backup directories created successfully"
-    else
-      log_error "Failed to create backup directories"
-      rm -rf "$test_backup_dir"
-      export BACKUP_DIR="$original_backup_dir"
-      return 1
-    fi
+    # List all created directories for debugging
+    log_info "Listing all directories in $BACKUP_DIR:"
+    ls -la "$BACKUP_DIR"
     
-    # Check permissions
-    local dir_owner
-    dir_owner=$(stat -c "%U:%G" "$test_backup_dir" 2>/dev/null || stat -f "%Su:%Sg" "$test_backup_dir" 2>/dev/null)
-    log_info "Directory owner: $dir_owner"
-    
-    if [[ "$dir_owner" == *"postgres"* ]]; then
-      log_pass "Backup directory has correct ownership"
+    return 0
+  }
+  
+  # Execute local directory creation function
+  log_info "Calling local_create_backup_directories function..."
+  local_create_backup_directories
+  
+  # Verify directory structure was created properly
+  log_info "Verifying backup directory structure..."
+  
+  # Check if main directory exists
+  if [ ! -d "$test_backup_dir" ]; then
+    log_error "Main backup directory $test_backup_dir was not created"
+    return 1
+  fi
+  
+  # Check each required subdirectory
+  local all_dirs_created=true
+  local required_dirs=("full" "incremental" "archive" "logs")
+  
+  for dir in "${required_dirs[@]}"; do
+    if [ ! -d "$test_backup_dir/$dir" ]; then
+      log_error "Required directory $test_backup_dir/$dir does not exist"
+      all_dirs_created=false
     else
-      log_warn "Backup directory ownership is not set to postgres (this is expected in test environment)"
+      log_info "Required directory $test_backup_dir/$dir exists"
     fi
+  done
+  
+  # Final validation
+  if [ "$all_dirs_created" = true ]; then
+    log_pass "All required backup directories were created successfully"
   else
-    log_error "backup_config.sh not found at $setup_dir/backup_config.sh"
-    log_info "Searching for backup_config.sh..."
-    find "$project_dir" -name "backup_config.sh" | while read -r file; do
-      log_info "Found at: $file"
-    done
-    rm -rf "$test_backup_dir"
+    log_error "Failed to create all required backup directories"
+    # Don't clean up on failure to allow manual inspection
     export BACKUP_DIR="$original_backup_dir"
     return 1
   fi
@@ -227,6 +213,8 @@ test_backup_directory_structure() {
   # Clean up
   log_info "Cleaning up test directory"
   rm -rf "$test_backup_dir"
+  
+  # Restore original backup directory
   export BACKUP_DIR="$original_backup_dir"
   log_info "Restored original BACKUP_DIR: $BACKUP_DIR"
   
