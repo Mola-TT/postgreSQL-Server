@@ -57,13 +57,41 @@ test_service_status() {
   test_header "POSTGRESQL CONNECTION TEST RESULTS"
   
   # Check PostgreSQL service status
-  local pg_service_name="postgresql@14-main.service"
-  local pg_service_status
+  local pg_service_name="postgresql.service postgresql@*-main.service postgresql@14-main.service"
+  local pg_service_status="inactive"
+  local service_found=false
   
-  pg_service_status=$(systemctl is-active $pg_service_name 2>/dev/null || echo "inactive")
+  # Try multiple service patterns to find the right one
+  for service in $pg_service_name; do
+    # Use wildcard expansion for postgresql@*-main.service
+    if [[ "$service" == *"*"* ]]; then
+      # Try to find matching service
+      for actual_service in $(systemctl list-units --type=service | grep postgresql@ | awk '{print $1}'); do
+        if systemctl is-active --quiet "$actual_service"; then
+          pg_service_status="active"
+          service_found=true
+          break
+        fi
+      done
+    else
+      # Check direct service name
+      if systemctl is-active --quiet "$service"; then
+        pg_service_status="active"
+        service_found=true
+        break
+      fi
+    fi
+  done
+  
+  # Fall back to general PostgreSQL check if no specific service found
+  if [ "$service_found" = false ] && systemctl is-active --quiet postgresql; then
+    pg_service_status="active"
+    service_found=true
+  fi
   
   if [ "$pg_service_status" = "active" ]; then
     log_pass "PostgreSQL service is active"
+    return 0
   else
     log_error "PostgreSQL service is not active: $pg_service_status"
     return 1
@@ -72,7 +100,36 @@ test_service_status() {
 
 # Test function to check if PostgreSQL is running
 check_postgresql_status() {
-    if systemctl is-active --quiet postgresql; then
+    # Use the same logic as test_service_status
+    local pg_service_name="postgresql.service postgresql@*-main.service postgresql@14-main.service"
+    local service_found=false
+    
+    # Try multiple service patterns to find the right one
+    for service in $pg_service_name; do
+        # Use wildcard expansion for postgresql@*-main.service
+        if [[ "$service" == *"*"* ]]; then
+            # Try to find matching service
+            for actual_service in $(systemctl list-units --type=service | grep postgresql@ | awk '{print $1}' 2>/dev/null || echo ""); do
+                if systemctl is-active --quiet "$actual_service" 2>/dev/null; then
+                    service_found=true
+                    break
+                fi
+            done
+        else
+            # Check direct service name
+            if systemctl is-active --quiet "$service" 2>/dev/null; then
+                service_found=true
+                break
+            fi
+        fi
+    done
+    
+    # Fall back to general PostgreSQL check if no specific service found
+    if [ "$service_found" = false ] && systemctl is-active --quiet postgresql 2>/dev/null; then
+        service_found=true
+    fi
+    
+    if [ "$service_found" = true ]; then
         log_status_pass "PostgreSQL service is running"
         return 0
     else
@@ -399,15 +456,63 @@ test_temp_user_connection() {
     fi
 }
 
+# Execute commands silently and handle errors
+execute_silently() {
+    local cmd="$1"
+    local success_msg="$2"
+    local error_msg="$3"
+    
+    # Create temporary files for capturing output
+    local tmp_out=$(mktemp)
+    local tmp_err=$(mktemp)
+    
+    # Execute the command, capturing stdout and stderr
+    eval "$cmd" > "$tmp_out" 2> "$tmp_err"
+    local status=$?
+    
+    # Check execution status
+    if [ $status -eq 0 ]; then
+        # Command succeeded
+        if [ -n "$success_msg" ]; then
+            log_info "$success_msg"
+        fi
+    else
+        # Command failed
+        if [ -n "$error_msg" ]; then
+            log_warn "$error_msg"
+        fi
+        
+        # If log level is DEBUG, show the error output
+        if [ "${LOG_LEVEL:-INFO}" = "DEBUG" ]; then
+            if [ -s "$tmp_err" ]; then
+                log_debug "Error output from command '$cmd':"
+                cat "$tmp_err" | while read -r line; do
+                    log_debug "$line"
+                done
+            fi
+        fi
+    fi
+    
+    # Clean up temp files
+    rm -f "$tmp_out" "$tmp_err" 2>/dev/null || true
+    
+    return $status
+}
+
 # Run all tests
 run_tests() {
     local failed=0
     
     # Check services
     log_info "----- Service Status Tests -----"
-    test_service_status || ((failed++))
-    check_postgresql_status || ((failed++))
-    check_pgbouncer_status || ((failed++))
+    if ! test_service_status; then
+        ((failed++))
+        # If service status failed, skip the system check which will likely fail too
+        log_warn "Service status check failed, additional details skipped"
+    else
+        check_postgresql_status || ((failed++))
+        check_pgbouncer_status || ((failed++))
+    fi
     
     # Test connections
     log_info "----- Connection Tests -----"
