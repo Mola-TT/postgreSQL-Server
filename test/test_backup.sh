@@ -418,10 +418,12 @@ EOF
   fi
   
   # Check if cron file contains expected entries
-  if grep -q "$BACKUP_SCHEDULE_FULL" "$test_cron_file" && grep -q "$BACKUP_SCHEDULE_INCREMENTAL" "$test_cron_file"; then
+  if grep -q "postgres $BACKUP_DIR/scripts/full_backup.sh" "$test_cron_file" && \
+     grep -q "postgres $BACKUP_DIR/scripts/incremental_backup.sh" "$test_cron_file"; then
     log_pass "Cron job file contains expected entries"
   else
     log_error "Cron job file does not contain expected entries"
+    cat "$test_cron_file"
     rm -f "$test_cron_file"
     return 1
   fi
