@@ -274,8 +274,21 @@ run_tests() {
     
     # Run the tests with proper terminal handling
     log_info "Executing test runner: $script_path"
-    # Use exec to replace current process with the test runner to avoid buffering issues
-    "$script_path"
+    
+    # First, check if test directory exists and is accessible
+    local test_dir
+    test_dir=$(dirname "$script_path")
+    log_info "Test directory: $test_dir"
+    
+    # List test files to ensure they exist
+    if ! ls -la "$test_dir"/test_*.sh >/dev/null 2>&1; then
+        log_warn "No test files found in $test_dir - this may be an issue"
+    else
+        log_info "Found test files in $test_dir"
+    fi
+    
+    # Always use bash explicitly to avoid permission issues
+    bash "$script_path"
     local exit_code=$?
     
     # Ensure final logs are displayed
