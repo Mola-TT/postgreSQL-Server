@@ -48,13 +48,13 @@ log_section() {
 # Test header function
 test_header() {
   local title="$1"
+  echo ""
   log_info "========== $title =========="
 }
 
 # Service status function
 test_service_status() {
   test_header "POSTGRESQL CONNECTION TEST RESULTS"
-  log_info "----- Service Status Tests -----"
   
   # Check PostgreSQL service status
   local pg_service_name="postgresql@14-main.service"

@@ -35,6 +35,7 @@ print_section_header() {
 # Test header function
 test_header() {
   local title="$1"
+  echo ""
   log_info "========== $title =========="
 }
 

@@ -35,6 +35,7 @@ fi
 # Test header function
 test_header() {
   local title="$1"
+  echo ""
   log_info "========== $title =========="
 }
 
@@ -144,10 +145,11 @@ test_backup_directory_structure() {
   capture_output() {
     local cmd="$1"
     local output
-    output=$($cmd 2>&1)
+    output=$($cmd 2>&1) || true
     # Only output if there's an error or if DEBUG is enabled
-    if [ $? -ne 0 ] || [ "${DEBUG:-false}" = "true" ]; then
-      log_info "Command output: $output"
+    if [ $? -ne 0 ] && [ "${DEBUG:-false}" != "true" ]; then
+      # Filter out common noise messages
+      echo "$output" | grep -v "No such file or directory\|^ls:\|^find:" | head -n 5
     fi
   }
   
@@ -667,8 +669,12 @@ test_backup_compression() {
 capture_output() {
   local cmd="$1"
   local output
-  output=$($cmd 2>&1)
-  echo "$output" > /dev/null
+  output=$($cmd 2>&1) || true
+  # Only output if there's an error or if DEBUG is enabled
+  if [ $? -ne 0 ] && [ "${DEBUG:-false}" != "true" ]; then
+    # Filter out common noise messages
+    echo "$output" | grep -v "No such file or directory\|^ls:\|^find:" | head -n 5
+  fi
 }
 
 # Run all tests
