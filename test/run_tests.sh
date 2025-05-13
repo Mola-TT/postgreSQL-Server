@@ -29,11 +29,15 @@ log_section() {
 check_test_scripts() {
     log_info "Checking test scripts in directory: $TEST_DIR"
     
-    # List all test scripts with ls -la
-    if ! ls -la "$TEST_DIR"/test_*.sh 2>/dev/null; then
+    # List all test scripts with ls -la but capture the output first to format properly
+    local script_listing
+    script_listing=$(ls -la "$TEST_DIR"/test_*.sh 2>/dev/null)
+    if [ $? -ne 0 ]; then
         log_error "No test scripts found in $TEST_DIR"
         return 1
     fi
+    # Output listing with proper formatting
+    echo "$script_listing" | grep -v "^total"
     
     # Check permissions for each test script
     for script in "$TEST_DIR"/test_*.sh; do
@@ -41,7 +45,8 @@ check_test_scripts() {
             # Ensure script is executable
             chmod +x "$script" 2>/dev/null
             
-            # Log script permissions
+            # Log script permissions without new line
+            local script_perms
             script_perms=$(ls -la "$script" 2>/dev/null)
             log_info "Test script: $script_perms"
         fi
@@ -57,7 +62,6 @@ run_all_tests() {
     local passed=0
     
     log_section "RUNNING ALL TESTS"
-    echo ""
     
     # Check if test scripts exist and are executable
     check_test_scripts
@@ -77,8 +81,6 @@ run_all_tests() {
     for test_script in "${ordered_tests[@]}"; do
         if [ ! -f "$test_script" ]; then
             log_warn "Test script not found: $(basename "$test_script")"
-            # Flush output
-            echo -e "\n" && sync
             continue
         fi
         
@@ -92,10 +94,11 @@ run_all_tests() {
         
         log_info "Running test: $test_name"
         # Flush output before running test
-        echo -e "\n" && sync
+        sync
         
         # Run with bash explicitly to avoid permission issues
-        if bash "$test_script"; then
+        # Redirect stderr to stdout to ensure all output is captured
+        if bash "$test_script" 2>&1; then
             log_pass "✓ $test_name: PASSED"
             ((passed++))
         else
@@ -105,14 +108,12 @@ run_all_tests() {
         fi
         ((test_count++))
         # Ensure output is visible
-        echo -e "\n" && sync
+        sync
     done
     
     # Print summary
     if [ $test_count -eq 0 ]; then
         log_warn "No tests found in $TEST_DIR"
-        # Flush output
-        echo -e "\n" && sync
         return 0
     fi
     
@@ -123,26 +124,18 @@ run_all_tests() {
     if [ $failed -eq 0 ]; then
         log_info "Failed: $failed"
         log_info "All tests passed successfully!"
-        # Flush output
-        echo -e "\n" && sync
         return 0
     else
         log_error "Failed: $failed"
         log_error "Some tests failed. Please check the logs above for details."
-        # Flush output
-        echo -e "\n" && sync
         return 1
     fi
 }
 
 # Main execution
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    # Ensure we're starting with a clean line
-    echo ""
     log_info "Test runner starting in: $SCRIPT_DIR"
     run_all_tests
     exit_code=$?
-    # Make sure the prompt appears on a new line after all tests
-    echo ""
     exit $exit_code
 fi 

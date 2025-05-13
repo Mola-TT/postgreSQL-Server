@@ -654,6 +654,14 @@ test_backup_compression() {
   return 0
 }
 
+# Redirect output to variable to avoid displaying it directly
+capture_output() {
+  local cmd="$1"
+  local output
+  output=$($cmd 2>&1)
+  echo "$output" > /dev/null
+}
+
 # Run all tests
 run_all_tests() {
   log_info "Starting PostgreSQL backup tests..."
