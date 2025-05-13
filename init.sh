@@ -536,10 +536,10 @@ main() {
     echo ""
     
     # Run tests if enabled
-    if [ "${RUN_TESTS:-false}" = true ]; then
+    if [ "${RUN_TESTS:-true}" = true ]; then
         run_tests
     else
-        log_info "Tests skipped (set RUN_TESTS=true to run tests)"
+        log_info "Tests skipped (RUN_TESTS is set to false)"
     fi
     
     if [ "$LOG_LEVEL" = "DEBUG" ]; then
