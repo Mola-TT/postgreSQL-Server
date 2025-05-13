@@ -497,16 +497,14 @@ EOF
   # Test success email notification if not in error-only mode
   if [ "$BACKUP_EMAIL_ON_ERROR_ONLY" != "true" ]; then
     log_info "Success email would be sent (BACKUP_EMAIL_ON_ERROR_ONLY is $BACKUP_EMAIL_ON_ERROR_ONLY)"
-    log_info "Success email content would be:"
-    cat "$test_success_email_file"
+    log_info "Success email subject: $BACKUP_SUCCESS_EMAIL_SUBJECT"
   else
     log_info "Success email would NOT be sent (BACKUP_EMAIL_ON_ERROR_ONLY is $BACKUP_EMAIL_ON_ERROR_ONLY)"
   fi
   
   # Test failure email notification (always sent regardless of BACKUP_EMAIL_ON_ERROR_ONLY)
   log_info "Failure email would always be sent regardless of BACKUP_EMAIL_ON_ERROR_ONLY setting"
-  log_info "Failure email content would be:"
-  cat "$test_failure_email_file"
+  log_info "Failure email subject: $BACKUP_FAILURE_EMAIL_SUBJECT"
   
   # Clean up
   rm -f "$test_success_email_file" "$test_failure_email_file"
