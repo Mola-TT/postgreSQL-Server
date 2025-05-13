@@ -35,9 +35,7 @@ fi
 # Test header function
 test_header() {
   local title="$1"
-  echo ""
   log_info "========== $title =========="
-  echo ""
 }
 
 # Test backup configuration
@@ -167,9 +165,7 @@ test_backup_directory_structure() {
       fi
     done
     
-    # List all created directories for debugging
-    log_info "Listing all directories in $BACKUP_DIR:"
-    ls -la "$BACKUP_DIR"
+    # Don't list all directories - removed as requested
     
     return 0
   }
