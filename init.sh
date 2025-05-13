@@ -283,6 +283,9 @@ run_tests() {
 setup_hardware_change_detection() {
   log_info "Setting up hardware change detection service..."
   
+  # Get the success variable name if provided
+  local success_var="$1"
+  
   # Find the hardware change detector script
   local script_path=""
   # Redirect find_script output to a variable to avoid log contamination
@@ -292,6 +295,10 @@ setup_hardware_change_detection() {
   # Verify the result
   if [ $find_result -ne 0 ] || [ -z "$script_path" ]; then
     log_error "Could not find hardware_change_detector.sh"
+    # Update success variable if provided
+    if [ -n "$success_var" ]; then
+      eval "$success_var=false"
+    fi
     return 1
   fi
   
@@ -303,11 +310,19 @@ setup_hardware_change_detection() {
   # Double-check that the file actually exists
   if [ ! -f "$script_path" ]; then
     log_error "Script path $script_path does not exist or is not a regular file"
+    # Update success variable if provided
+    if [ -n "$success_var" ]; then
+      eval "$success_var=false"
+    fi
     return 1
   fi
   
   if [ ! -r "$script_path" ]; then
     log_error "Script path $script_path is not readable"
+    # Update success variable if provided
+    if [ -n "$success_var" ]; then
+      eval "$success_var=false"
+    fi
     return 1
   fi
   
@@ -317,15 +332,24 @@ setup_hardware_change_detection() {
   log_info "Executing hardware_change_detector.sh..."
   # Use bash explicitly to execute the script with proper quoting to handle spaces in path
   bash "$script_path"
-  hw_detector_success=$?
+  local hw_detector_result=$?
   
-  if [ $hw_detector_success -eq 0 ]; then
-    log_info "Hardware change detector setup completed successfully"
-  else
-    log_error "Hardware change detector setup failed with exit code $hw_detector_success"
+  # Set the success variable based on result if provided
+  if [ -n "$success_var" ]; then
+    if [ $hw_detector_result -eq 0 ]; then
+      eval "$success_var=true"
+    else
+      eval "$success_var=false"
+    fi
   fi
   
-  return $hw_detector_success
+  if [ $hw_detector_result -eq 0 ]; then
+    log_info "Hardware change detector setup completed successfully"
+  else
+    log_error "Hardware change detector setup failed with exit code $hw_detector_result"
+  fi
+  
+  return $hw_detector_result
 }
 
 # Setup backup configuration
@@ -460,7 +484,7 @@ main() {
     fi
     
     # Setup hardware change detection
-    setup_hardware_change_detection
+    setup_hardware_change_detection "hw_detector_success"
     
     # Setup backup configuration
     setup_backup_configuration
