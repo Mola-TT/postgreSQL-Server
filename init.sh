@@ -220,64 +220,28 @@ run_tests() {
     # Flush stdout to ensure immediate display
     echo -e "\n" && sync
     
-    # Try to find the test runner using find_script
-    local script_path=""
-    script_path=$(find_script "run_tests.sh" 2>/dev/null)
-    local find_result=$?
+    # Set the explicit path to the test runner in the test directory
+    local script_path="$SCRIPT_DIR/test/run_tests.sh"
     
-    if [ $find_result -ne 0 ] || [ -z "$script_path" ]; then
-        # Fall back to checking common test locations
-        local possible_locations=(
-            "$SCRIPT_DIR/test/run_tests.sh"
-            "/root/postgreSQL-Server/test/run_tests.sh" 
-            "$(dirname "$SCRIPT_DIR")/test/run_tests.sh"
-            "/home/*/postgreSQL-Server/test/run_tests.sh"
-        )
-        
-        log_info "Searching for test runner in specific test locations..."
-        # Find the first existing test script
-        for location in "${possible_locations[@]}"; do
-            log_debug "Checking for test runner at: $location"
-            if [ -f "$location" ] && [ -r "$location" ]; then
-                script_path="$location"
-                log_info "Found test runner at: $script_path"
-                break
-            fi
-        done
-    else
-        # Clean up any potential logging in the path (defensive measure)
-        script_path=$(echo "$script_path" | grep -v '^\[' | tail -n 1)
-        log_info "Using test runner at: $script_path"
-    fi
-    
-    if [ -z "$script_path" ] || [ ! -f "$script_path" ]; then
-        log_error "Could not find test runner script 'run_tests.sh'"
+    # Check if the file exists
+    if [ ! -f "$script_path" ]; then
+        log_error "Test runner not found at: $script_path"
         return 1
     fi
+    
+    log_info "Found test runner at: $script_path"
     
     # Make sure the test runner is executable
     chmod +x "$script_path" 2>/dev/null
     if [ $? -ne 0 ]; then
         log_warn "Failed to set executable permission on test runner. Will try with bash explicitly."
-        log_info "Executing test runner with bash explicitly..."
-        # Ensure output is visible by using standard output for bash
-        if bash "$script_path"; then
-            log_info "Tests executed with bash successfully"
-        else
-            local exit_code=$?
-            log_warn "Some tests failed with exit code $exit_code. Please check the logs for details."
-        fi
-        # Flush one more time after tests complete
-        echo -e "\n" && sync
-        return $?
     fi
     
     # Run the tests with proper terminal handling
     log_info "Executing test runner: $script_path"
     
     # First, check if test directory exists and is accessible
-    local test_dir
-    test_dir=$(dirname "$script_path")
+    local test_dir="$SCRIPT_DIR/test"
     log_info "Test directory: $test_dir"
     
     # List test files to ensure they exist
