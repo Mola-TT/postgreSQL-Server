@@ -217,6 +217,8 @@ execute_script() {
 # Run tests after setup
 run_tests() {
     log_info "Running test suite..."
+    # Flush stdout to ensure immediate display
+    echo -e "\n" && sync
     
     # Try to find the test runner using find_script
     local script_path=""
@@ -258,25 +260,36 @@ run_tests() {
     if [ $? -ne 0 ]; then
         log_warn "Failed to set executable permission on test runner. Will try with bash explicitly."
         log_info "Executing test runner with bash explicitly..."
+        # Ensure output is visible by using standard output for bash
         if bash "$script_path"; then
             log_info "Tests executed with bash successfully"
         else
             local exit_code=$?
             log_warn "Some tests failed with exit code $exit_code. Please check the logs for details."
         fi
+        # Flush one more time after tests complete
+        echo -e "\n" && sync
         return $?
     fi
     
-    # Run the tests
+    # Run the tests with proper terminal handling
     log_info "Executing test runner: $script_path"
-    if "$script_path"; then
+    # Use exec to replace current process with the test runner to avoid buffering issues
+    "$script_path"
+    local exit_code=$?
+    
+    # Ensure final logs are displayed
+    echo -e "\n" && sync
+    
+    if [ $exit_code -eq 0 ]; then
         log_info "Tests executed successfully"
     else
-        local exit_code=$?
         log_warn "Some tests failed with exit code $exit_code. Please check the logs for details."
     fi
     
-    return $?
+    # Final flush of output
+    echo -e "\n" && sync
+    return $exit_code
 }
 
 # Setup hardware change detection service

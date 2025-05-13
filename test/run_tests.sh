@@ -21,6 +21,8 @@ log_section() {
     log_info "=============================================="
     log_info "$1"
     log_info "=============================================="
+    # Flush stdout to ensure immediate display
+    sync
 }
 
 # Run all test scripts in the test directory
@@ -45,26 +47,34 @@ run_all_tests() {
     for test_script in "${ordered_tests[@]}"; do
         if [ ! -f "$test_script" ]; then
             log_warn "Test script not found: $(basename "$test_script")"
+            # Flush output
+            echo -e "\n" && sync
             continue
         fi
         chmod +x "$test_script"
         test_name=$(basename "$test_script")
         
         log_info "Running test: $test_name"
+        # Flush output before running test
+        echo -e "\n" && sync
+        
         if "$test_script"; then
-            log_info "✓ $test_name: PASSED"
+            log_pass "✓ $test_name: PASSED"
             ((passed++))
         else
             log_error "✗ $test_name: FAILED"
             ((failed++))
         fi
         ((test_count++))
-        echo ""
+        # Ensure output is visible
+        echo -e "\n" && sync
     done
     
     # Print summary
     if [ $test_count -eq 0 ]; then
         log_warn "No tests found in $TEST_DIR"
+        # Flush output
+        echo -e "\n" && sync
         return 0
     fi
     
@@ -75,16 +85,25 @@ run_all_tests() {
     if [ $failed -eq 0 ]; then
         log_info "Failed: $failed"
         log_info "All tests passed successfully!"
+        # Flush output
+        echo -e "\n" && sync
         return 0
     else
         log_error "Failed: $failed"
         log_error "Some tests failed. Please check the logs above for details."
+        # Flush output
+        echo -e "\n" && sync
         return 1
     fi
 }
 
 # Main execution
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    # Ensure we're starting with a clean line
+    echo ""
     run_all_tests
-    exit $?
+    exit_code=$?
+    # Make sure the prompt appears on a new line after all tests
+    echo ""
+    exit $exit_code
 fi 
