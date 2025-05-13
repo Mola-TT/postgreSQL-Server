@@ -100,7 +100,7 @@ run_all_tests() {
         
         # Run with bash explicitly to avoid permission issues
         # Redirect stderr to stdout to ensure all output is captured
-        if bash "$test_script" 2>&1; then
+        if bash "$test_script" from_runner 2>&1; then
             log_pass "✓ $test_name: PASSED"
             ((passed++))
         else
@@ -126,8 +126,14 @@ run_all_tests() {
     if [ $failed -eq 0 ]; then
         log_info "Failed: $failed"
         log_info "All tests passed successfully!"
-        echo ""
-        log_info "Tests executed successfully"
+        
+        # Only print success message once
+        if [ -z "$TEST_RUNNER_SUCCESS_PRINTED" ]; then
+            export TEST_RUNNER_SUCCESS_PRINTED=1
+            echo ""
+            log_info "Tests executed successfully"
+        fi
+        
         return 0
     else
         log_error "Failed: $failed"
@@ -138,10 +144,16 @@ run_all_tests() {
     fi
 }
 
-# Main execution
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+# Function to run the tests and output the result only once
+main() {
     log_info "Test runner starting in: $SCRIPT_DIR"
     run_all_tests
     exit_code=$?
-    exit $exit_code
+    return $exit_code
+}
+
+# Main execution
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main
+    exit $?
 fi 

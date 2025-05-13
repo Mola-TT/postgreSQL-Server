@@ -692,10 +692,17 @@ run_all_tests() {
   test_backup_encryption
   test_backup_compression
   
-  log_info "All PostgreSQL backup tests completed"
+  # Only print completion message when run directly
+  if [ "${TESTS_RUNNING_FROM_RUNNER:-0}" = "0" ]; then
+    log_info "All PostgreSQL backup tests completed"
+  fi
 }
 
 # If script is run directly, execute tests
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  # Check if being called from the test runner
+  if [[ "$*" == *"from_runner"* ]]; then
+    export TESTS_RUNNING_FROM_RUNNER=1
+  fi
   run_all_tests
 fi 
