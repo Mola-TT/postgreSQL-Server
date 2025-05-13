@@ -17,6 +17,27 @@ if [ -f "$SCRIPT_DIR/conf/user.env" ]; then
     source "$SCRIPT_DIR/conf/user.env"
 fi
 
+# Override log_info to avoid duplicates when reporting success
+original_log_info() {
+    log "INFO" "$1"
+}
+
+# Create a wrapper for log_info that filters out duplicate messages
+log_info() {
+    # Filter out the specific duplicate message
+    if [[ "$1" == "Tests executed successfully" && "$TEST_RUNNER_SUCCESS_PRINTED" == "1" ]]; then
+        return 0
+    fi
+    
+    # If it's the success message, mark it as printed
+    if [[ "$1" == "Tests executed successfully" ]]; then
+        export TEST_RUNNER_SUCCESS_PRINTED=1
+    fi
+    
+    # Call the original function
+    original_log_info "$1"
+}
+
 log_section() {
     log_info "=============================================="
     log_info "$1"
@@ -126,14 +147,8 @@ run_all_tests() {
     if [ $failed -eq 0 ]; then
         log_info "Failed: $failed"
         log_info "All tests passed successfully!"
-        
-        # Only print success message once
-        if [ -z "$TEST_RUNNER_SUCCESS_PRINTED" ]; then
-            export TEST_RUNNER_SUCCESS_PRINTED=1
-            echo ""
-            log_info "Tests executed successfully"
-        fi
-        
+        echo ""
+        log_info "Tests executed successfully"
         return 0
     else
         log_error "Failed: $failed"
@@ -144,12 +159,14 @@ run_all_tests() {
     fi
 }
 
-# Function to run the tests and output the result only once
+# Function to run the tests and ensure success message is displayed only once
 main() {
+    # Reset the flag at the start of execution
+    export TEST_RUNNER_SUCCESS_PRINTED=0
+    
     log_info "Test runner starting in: $SCRIPT_DIR"
     run_all_tests
-    exit_code=$?
-    return $exit_code
+    return $?
 }
 
 # Main execution
