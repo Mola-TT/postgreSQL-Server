@@ -29,26 +29,26 @@ log_section() {
 check_test_scripts() {
     log_info "Checking test scripts in directory: $TEST_DIR"
     
-    # List all test scripts with ls -la but capture the output first to format properly
-    local script_listing
-    script_listing=$(ls -la "$TEST_DIR"/test_*.sh 2>/dev/null)
-    if [ $? -ne 0 ]; then
+    # Get all test scripts
+    local test_scripts=("$TEST_DIR"/test_*.sh)
+    
+    # Check if any test scripts were found
+    if [ ! -f "${test_scripts[0]}" ]; then
         log_error "No test scripts found in $TEST_DIR"
         return 1
     fi
-    # Output listing with proper formatting
-    echo "$script_listing" | grep -v "^total"
     
-    # Check permissions for each test script
-    for script in "$TEST_DIR"/test_*.sh; do
+    # Output listing with proper formatting and numbering
+    local counter=1
+    for script in "${test_scripts[@]}"; do
         if [ -f "$script" ]; then
             # Ensure script is executable
             chmod +x "$script" 2>/dev/null
             
-            # Log script permissions without new line
-            local script_perms
-            script_perms=$(ls -la "$script" 2>/dev/null)
-            log_info "Test script: $script_perms"
+            # Log script with numbering
+            local script_name=$(basename "$script")
+            log_info "$counter. $script_name"
+            ((counter++))
         fi
     done
     
@@ -92,6 +92,8 @@ run_all_tests() {
         
         test_name=$(basename "$test_script")
         
+        # Add a blank line before running each test
+        echo ""
         log_info "Running test: $test_name"
         # Flush output before running test
         sync
@@ -124,10 +126,14 @@ run_all_tests() {
     if [ $failed -eq 0 ]; then
         log_info "Failed: $failed"
         log_info "All tests passed successfully!"
+        echo ""
+        log_info "Tests executed successfully"
         return 0
     else
         log_error "Failed: $failed"
         log_error "Some tests failed. Please check the logs above for details."
+        echo ""
+        log_info "Tests completed with errors"
         return 1
     fi
 }

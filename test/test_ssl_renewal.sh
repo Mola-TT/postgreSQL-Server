@@ -33,6 +33,26 @@ print_section_header() {
   log_info "=============================================="
 }
 
+# Test header function
+test_header() {
+  local title="$1"
+  log_info "========== $title =========="
+}
+
+# Test SSL renewal script existence
+test_script_existence() {
+  test_header "Testing SSL Renewal Script Existence"
+  log_info "Checking for ssl_renewal.sh script..."
+  
+  # Check if ssl_renewal.sh exists
+  if [ -f "$SETUP_DIR/ssl_renewal.sh" ]; then
+    log_pass "ssl_renewal.sh script exists at $SETUP_DIR/ssl_renewal.sh"
+  else
+    log_error "ssl_renewal.sh script not found at $SETUP_DIR/ssl_renewal.sh"
+    return 1
+  fi
+}
+
 # Test certbot installation and configuration
 test_certbot_installation() {
   log_info "Testing certbot installation..."

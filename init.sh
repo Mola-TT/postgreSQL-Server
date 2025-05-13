@@ -218,7 +218,7 @@ execute_script() {
 run_tests() {
     log_info "Running test suite..."
     # Flush stdout to ensure immediate display
-    echo -e "\n" && sync
+    sync
     
     # Set the explicit path to the test runner in the test directory
     local script_path="$SCRIPT_DIR/test/run_tests.sh"
@@ -240,23 +240,12 @@ run_tests() {
     # Run the tests with proper terminal handling
     log_info "Executing test runner: $script_path"
     
-    # First, check if test directory exists and is accessible
-    local test_dir="$SCRIPT_DIR/test"
-    log_info "Test directory: $test_dir"
-    
-    # List test files to ensure they exist
-    if ! ls -la "$test_dir"/test_*.sh >/dev/null 2>&1; then
-        log_warn "No test files found in $test_dir - this may be an issue"
-    else
-        log_info "Found test files in $test_dir"
-    fi
-    
     # Always use bash explicitly to avoid permission issues
     bash "$script_path"
     local exit_code=$?
     
     # Ensure final logs are displayed
-    echo -e "\n" && sync
+    sync
     
     if [ $exit_code -eq 0 ]; then
         log_info "Tests executed successfully"
@@ -265,7 +254,7 @@ run_tests() {
     fi
     
     # Final flush of output
-    echo -e "\n" && sync
+    sync
     return $exit_code
 }
 

@@ -140,6 +140,17 @@ test_backup_directory_structure() {
   export BACKUP_DIR="$test_backup_dir"
   log_info "Temporarily set BACKUP_DIR to: $BACKUP_DIR"
   
+  # Function to capture and suppress verbose output
+  capture_output() {
+    local cmd="$1"
+    local output
+    output=$($cmd 2>&1)
+    # Only output if there's an error or if DEBUG is enabled
+    if [ $? -ne 0 ] || [ "${DEBUG:-false}" = "true" ]; then
+      log_info "Command output: $output"
+    fi
+  }
+  
   # Local function to create test backup directory structure
   # This is a standalone implementation separate from the main backup_config.sh
   local_create_backup_directories() {
@@ -164,8 +175,6 @@ test_backup_directory_structure() {
         log_info "Subdirectory already exists: $BACKUP_DIR/$subdir"
       fi
     done
-    
-    # Don't list all directories - removed as requested
     
     return 0
   }

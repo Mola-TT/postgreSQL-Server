@@ -115,9 +115,7 @@ capture_function_output_v2() {
 # Test header function
 test_header() {
   local title="$1"
-  echo ""
   log_info "========== $title =========="
-  echo ""
 }
 
 # Get platform-agnostic temporary directory
@@ -508,6 +506,18 @@ EOF
 # Test hardware change detection
 test_hardware_change_detector() {
   test_header "Testing Hardware Change Detector"
+  log_info "Testing hardware change detection..."
+  
+  # Create a mock previous hardware file
+  local mock_prev_file="/tmp/prev_hardware.txt"
+  echo "CPU_CORES=2" > "$mock_prev_file"
+  echo "MEMORY_MB=4096" >> "$mock_prev_file"
+  echo "DISK_SIZE_GB=50" >> "$mock_prev_file"
+  
+  # Create mock current hardware values
+  local current_cpu_cores=4
+  local current_memory_mb=8192
+  local current_disk_gb=100
   
   # Create temporary directory for hardware specs files
   local hw_specs_dir="$TEMP_TEST_DIR/hw_specs"
@@ -518,44 +528,21 @@ test_hardware_change_detector() {
     return 0
   fi
   
-  # Create mock hardware specs files
-  local current_specs_file="$hw_specs_dir/hardware_specs.json"
-  local previous_specs_file="$hw_specs_dir/previous_hardware_specs.json"
-  
   # Create current specs file
-  cat > "$current_specs_file" << EOF
+  cat > "$hw_specs_dir/hardware_specs.json" << EOF
 {
   "timestamp": "$(date "+%Y-%m-%d %H:%M:%S")",
   "cpu": {
-    "cores": 4,
+    "cores": $current_cpu_cores,
     "model": "Test CPU"
   },
   "memory": {
-    "total_mb": 8192,
+    "total_mb": $current_memory_mb,
     "swap_mb": 2048
   },
   "disk": {
     "data_directory": "/var/lib/postgresql",
-    "size_gb": 100
-  }
-}
-EOF
-  
-  # Create previous specs file with different values
-  cat > "$previous_specs_file" << EOF
-{
-  "timestamp": "$(date -d "yesterday" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || date "+%Y-%m-%d %H:%M:%S")",
-  "cpu": {
-    "cores": 2,
-    "model": "Test CPU"
-  },
-  "memory": {
-    "total_mb": 4096,
-    "swap_mb": 1024
-  },
-  "disk": {
-    "data_directory": "/var/lib/postgresql",
-    "size_gb": 50
+    "size_gb": $current_disk_gb
   }
 }
 EOF
@@ -567,18 +554,18 @@ EOF
 # Mock script for hardware change detection
 
 # Define paths
-HARDWARE_SPECS_FILE="$current_specs_file"
-PREVIOUS_SPECS_FILE="$previous_specs_file"
+HARDWARE_SPECS_FILE="$hw_specs_dir/hardware_specs.json"
+PREVIOUS_SPECS_FILE="$mock_prev_file"
 
 # Extract values from current specs
-current_cpu_cores=\$(grep -o '"cores": [0-9]*' "$current_specs_file" | grep -o '[0-9]*')
-current_memory_mb=\$(grep -o '"total_mb": [0-9]*' "$current_specs_file" | grep -o '[0-9]*')
-current_disk_gb=\$(grep -o '"size_gb": [0-9]*' "$current_specs_file" | grep -o '[0-9]*')
+current_cpu_cores=\$(grep -o '"cores": [0-9]*' "$HARDWARE_SPECS_FILE" | grep -o '[0-9]*')
+current_memory_mb=\$(grep -o '"total_mb": [0-9]*' "$HARDWARE_SPECS_FILE" | grep -o '[0-9]*')
+current_disk_gb=\$(grep -o '"size_gb": [0-9]*' "$HARDWARE_SPECS_FILE" | grep -o '[0-9]*')
 
 # Extract values from previous specs
-previous_cpu_cores=\$(grep -o '"cores": [0-9]*' "$previous_specs_file" | grep -o '[0-9]*')
-previous_memory_mb=\$(grep -o '"total_mb": [0-9]*' "$previous_specs_file" | grep -o '[0-9]*')
-previous_disk_gb=\$(grep -o '"size_gb": [0-9]*' "$previous_specs_file" | grep -o '[0-9]*')
+previous_cpu_cores=\$(grep -o '"cores": [0-9]*' "$PREVIOUS_SPECS_FILE" | grep -o '[0-9]*')
+previous_memory_mb=\$(grep -o '"total_mb": [0-9]*' "$PREVIOUS_SPECS_FILE" | grep -o '[0-9]*')
+previous_disk_gb=\$(grep -o '"size_gb": [0-9]*' "$PREVIOUS_SPECS_FILE" | grep -o '[0-9]*')
 
 # Calculate percentage changes
 cpu_change=\$(( (current_cpu_cores - previous_cpu_cores) * 100 / previous_cpu_cores ))

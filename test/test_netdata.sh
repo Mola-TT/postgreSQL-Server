@@ -32,6 +32,26 @@ print_section_header() {
   log_info "=============================================="
 }
 
+# Test header function
+test_header() {
+  local title="$1"
+  log_info "========== $title =========="
+}
+
+# Test Netdata script existence
+test_script_existence() {
+  test_header "Testing Netdata Script Existence"
+  log_info "Checking for netdata_config.sh script..."
+  
+  # Check if netdata_config.sh exists
+  if [ -f "$SETUP_DIR/netdata_config.sh" ]; then
+    log_pass "netdata_config.sh script exists at $SETUP_DIR/netdata_config.sh"
+  else
+    log_error "netdata_config.sh script not found at $SETUP_DIR/netdata_config.sh"
+    return 1
+  fi
+}
+
 # Test internal Netdata access
 test_internal_netdata() {
   log_info "Testing internal Netdata access on 127.0.0.1:19999..."

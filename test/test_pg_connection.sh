@@ -45,7 +45,30 @@ log_section() {
     log_info "=============================================="
 }
 
-log_section "POSTGRESQL CONNECTION TEST RESULTS"
+# Test header function
+test_header() {
+  local title="$1"
+  log_info "========== $title =========="
+}
+
+# Service status function
+test_service_status() {
+  test_header "POSTGRESQL CONNECTION TEST RESULTS"
+  log_info "----- Service Status Tests -----"
+  
+  # Check PostgreSQL service status
+  local pg_service_name="postgresql@14-main.service"
+  local pg_service_status
+  
+  pg_service_status=$(systemctl is-active $pg_service_name 2>/dev/null || echo "inactive")
+  
+  if [ "$pg_service_status" = "active" ]; then
+    log_pass "PostgreSQL service is active"
+  else
+    log_error "PostgreSQL service is not active: $pg_service_status"
+    return 1
+  fi
+}
 
 # Test function to check if PostgreSQL is running
 check_postgresql_status() {
@@ -382,6 +405,7 @@ run_tests() {
     
     # Check services
     log_info "----- Service Status Tests -----"
+    test_service_status || ((failed++))
     check_postgresql_status || ((failed++))
     check_pgbouncer_status || ((failed++))
     
