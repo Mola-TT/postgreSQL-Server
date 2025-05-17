@@ -212,14 +212,22 @@ test_pgbouncer_connection() {
     local userlist_path="/etc/pgbouncer/userlist.txt"
     local recovery_needed=false
     
+    log_info "Validating pgbouncer userlist.txt before connection test"
+    
     # Check if userlist.txt exists
     if [ ! -f "$userlist_path" ]; then
         log_error "pgbouncer userlist file ($userlist_path) does not exist"
         recovery_needed=true
-    # Check if postgres user exists in userlist.txt
+    # Check if postgres user exists in userlist.txt (this is the most critical issue)
     elif ! grep -q "\"postgres\"" "$userlist_path"; then
-        log_error "postgres user not found in userlist.txt"
+        log_error "CRITICAL: postgres user not found in userlist.txt - pgbouncer authentication will fail"
         recovery_needed=true
+        
+        # Preserve the existing users from userlist.txt before we rebuild it
+        if [ -f "$userlist_path" ]; then
+            log_info "Backing up existing userlist entries before rebuilding"
+            cp "$userlist_path" "${userlist_path}.bak.$(date +%Y%m%d%H%M%S)" 2>/dev/null
+        fi
     # Check permissions
     else
         local permissions=$(stat -c "%a" "$userlist_path" 2>/dev/null || stat -f "%p" "$userlist_path" 2>/dev/null)
@@ -228,6 +236,20 @@ test_pgbouncer_connection() {
         if [ "$permissions" != "600" ] || [ "$owner" != "postgres:postgres" ]; then
             log_warn "Incorrect userlist.txt permissions or ownership (permissions: $permissions, owner: $owner)"
             recovery_needed=true
+            
+            # Try to fix permissions and ownership immediately
+            log_info "Attempting to fix permissions and ownership"
+            sudo chown postgres:postgres "$userlist_path" 2>/dev/null || chown postgres:postgres "$userlist_path" 2>/dev/null
+            sudo chmod 600 "$userlist_path" 2>/dev/null || chmod 600 "$userlist_path" 2>/dev/null
+            
+            # Verify if fixed
+            permissions=$(stat -c "%a" "$userlist_path" 2>/dev/null || stat -f "%p" "$userlist_path" 2>/dev/null)
+            owner=$(stat -c "%U:%G" "$userlist_path" 2>/dev/null || stat -f "%Su:%Sg" "$userlist_path" 2>/dev/null)
+            
+            if [ "$permissions" = "600" ] && [ "$owner" = "postgres:postgres" ]; then
+                log_info "Successfully fixed permissions and ownership"
+                recovery_needed=false
+            fi
         fi
     fi
     

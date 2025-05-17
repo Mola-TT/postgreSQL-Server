@@ -202,8 +202,17 @@ generate_pgbouncer_userlist() {
                 continue
             fi
             
-            if ! extract_hash "$user" "$temp_userlist"; then
+            # Create a temporary file for this user to avoid affecting existing postgres entry
+            local temp_user_file=$(mktemp)
+            
+            if extract_hash "$user" "$temp_user_file"; then
+                # Append to our temp userlist instead of overwriting it
+                cat "$temp_user_file" >> "$temp_userlist"
+                rm -f "$temp_user_file"
+                log_info "Added user $user via extract_hash function"
+            else
                 log_warn "Failed to extract hash for user $user using extract_hash function"
+                rm -f "$temp_user_file"
                 
                 # Try direct query method
                 log_info "Trying direct SQL query method for user $user"
@@ -214,8 +223,6 @@ generate_pgbouncer_userlist() {
                         log_info "Added user $user via direct SQL query"
                     fi
                 fi
-            else
-                log_info "Added user $user via extract_hash function"
             fi
         done
     fi
@@ -250,10 +257,33 @@ generate_pgbouncer_userlist() {
         # Backup existing userlist if it exists
         if [ -f "$PGB_USERLIST_PATH" ]; then
             cp "$PGB_USERLIST_PATH" "${PGB_USERLIST_PATH}.bak.$(date +%Y%m%d%H%M%S)" 2>/dev/null
+            
+            # Check if existing file has postgres user but our new file doesn't
+            if grep -q "\"postgres\"" "$PGB_USERLIST_PATH" && ! grep -q "\"postgres\"" "$temp_userlist"; then
+                log_warn "New userlist is missing postgres user but existing file has it! Preserving postgres entry"
+                grep "\"postgres\"" "$PGB_USERLIST_PATH" >> "$temp_userlist"
+            fi
         fi
         
         # Create directory if it doesn't exist
         mkdir -p "$(dirname "$PGB_USERLIST_PATH")" 2>/dev/null
+        
+        # Final verification: make sure postgres user exists before installing
+        if ! grep -q "\"postgres\"" "$temp_userlist"; then
+            log_error "Critical error: postgres user is missing from generated userlist! Attempting emergency recovery"
+            # Try one more time to add postgres with MD5 if PG_SUPERUSER_PASSWORD is available
+            if [ -n "$PG_SUPERUSER_PASSWORD" ]; then
+                local md5pass=$(echo -n "md5$(echo -n "${PG_SUPERUSER_PASSWORD}postgres" | md5sum | cut -d' ' -f1)")
+                echo "\"postgres\" \"$md5pass\"" >> "$temp_userlist"
+                log_warn "Added emergency postgres entry to prevent pgbouncer failure"
+            elif [ -f "$PGB_USERLIST_PATH" ] && grep -q "\"postgres\"" "$PGB_USERLIST_PATH"; then
+                # Preserve existing postgres entry as last resort
+                log_warn "Using existing postgres entry from previous userlist file"
+                grep "\"postgres\"" "$PGB_USERLIST_PATH" >> "$temp_userlist"
+            else
+                log_error "Cannot recover - postgres user is required for pgbouncer operation"
+            fi
+        fi
         
         # Try multiple methods to copy the file - don't give up easily
         local copy_success=false
