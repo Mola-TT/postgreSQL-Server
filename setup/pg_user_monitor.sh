@@ -122,9 +122,14 @@ install_pg_triggers() {
         return 1
     fi
     
-    # SQL script to create triggers
-    local sql_script=$(mktemp)
+    # Create a SQL script with proper permissions
+    # Create the script in a location where postgres user has access
+    local sql_script="/tmp/pg_user_monitor_triggers.sql"
     
+    # Clean up any existing file
+    rm -f "$sql_script" 2>/dev/null
+    
+    # Create the script
     cat > "$sql_script" << 'EOF'
 -- Create a table to track user operations
 CREATE TABLE IF NOT EXISTS pg_user_monitor (
@@ -185,6 +190,10 @@ GRANT SELECT ON pg_user_monitor TO postgres;
 GRANT SELECT, INSERT ON pg_user_monitor_operation_id_seq TO postgres;
 GRANT INSERT ON pg_user_monitor TO postgres;
 EOF
+    
+    # Make sure we have the right permissions
+    chmod 644 "$sql_script"
+    chown postgres:postgres "$sql_script" 2>/dev/null
     
     # Make sure we have the right permissions - attempt to verify postgres user is superuser
     local is_superuser

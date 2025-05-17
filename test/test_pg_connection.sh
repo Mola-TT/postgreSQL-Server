@@ -167,52 +167,22 @@ test_direct_connection() {
 
 # Test connection through pgbouncer
 test_pgbouncer_connection() {
-    # Test first with postgres database explicitly
-    if output=$(PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql -h localhost -p "${PGB_LISTEN_PORT}" -U postgres -d postgres -c "SELECT 1 as connected;" -t 2>/dev/null); then
-        if [[ "$output" == *"1"* ]]; then
-            log_status_pass "Connected to PostgreSQL through pgbouncer on port ${PGB_LISTEN_PORT}"
-            return 0
-        else
-            log_status_fail "Unexpected output from pgbouncer connection"
-            return 1
-        fi
-    else
-        log_warn "Failed to connect through pgbouncer with explicit database. Trying default connection..."
-        
-        # Try connecting without specifying the database
-        if output=$(PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql -h localhost -p "${PGB_LISTEN_PORT}" -U postgres -c "SELECT 1 as connected;" -t 2>/dev/null); then
-            if [[ "$output" == *"1"* ]]; then
-                log_status_pass "Connected to PostgreSQL through pgbouncer on port ${PGB_LISTEN_PORT} (default connection)"
-                return 0
-            fi
-        fi
-        
-        # Try one more attempt with the user-specified database
-        if [ "$DB_NAME" != "postgres" ]; then
-            log_warn "Trying to connect with user-specified database: ${DB_NAME}"
-            if output=$(PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql -h localhost -p "${PGB_LISTEN_PORT}" -U postgres -d "${DB_NAME}" -c "SELECT 1 as connected;" -t 2>/dev/null); then
-                if [[ "$output" == *"1"* ]]; then
-                    log_status_pass "Connected to PostgreSQL through pgbouncer on port ${PGB_LISTEN_PORT} using ${DB_NAME} database"
-                    return 0
-                fi
-            fi
-        fi
-        
-        # Check pgbouncer status for troubleshooting
-        log_warn "Checking pgbouncer service status for troubleshooting..."
-        service_status=$(systemctl status pgbouncer 2>&1)
-        log_warn "$service_status"
-        
-        # Check pgbouncer configuration as well
-        if [ -f "/etc/pgbouncer/pgbouncer.ini" ]; then
-            log_warn "Current pgbouncer configuration:"
-            pgbouncer_config=$(cat /etc/pgbouncer/pgbouncer.ini 2>&1)
-            log_warn "$pgbouncer_config"
-        fi
-        
-        log_status_fail "Failed to connect through pgbouncer on port ${PGB_LISTEN_PORT}"
+    local db_name="$1"
+    local result_var="$2"
+    local host="${3:-localhost}"
+    
+    # Add explicit SSL mode for the connection
+    if ! PGPASSWORD="$PG_SUPERUSER_PASSWORD" psql -h "$host" -p "$PGB_LISTEN_PORT" -U postgres -d "$db_name" -c "SELECT version();" -t --no-align --quiet --tuples-only --set=sslmode=require > /dev/null 2>&1; then
+        local err_output
+        err_output=$(PGPASSWORD="$PG_SUPERUSER_PASSWORD" psql -h "$host" -p "$PGB_LISTEN_PORT" -U postgres -d "$db_name" -c "SELECT version();" -t --no-align --set=sslmode=require 2>&1)
+        log_warning "Failed to connect to PostgreSQL through pgbouncer on port $PGB_LISTEN_PORT to database '$db_name'. Error: $err_output"
+        eval "$result_var=false"
         return 1
     fi
+    
+    log_info "✓ PASS: Connected to PostgreSQL through pgbouncer on port $PGB_LISTEN_PORT to database '$db_name'"
+    eval "$result_var=true"
+    return 0
 }
 
 # Test connection to specific database if configured
@@ -502,6 +472,7 @@ execute_silently() {
 # Run all tests
 run_tests() {
     local failed=0
+    local db_connection_result=false
     
     # Check services
     log_info "----- Service Status Tests -----"
@@ -517,7 +488,7 @@ run_tests() {
     # Test connections
     log_info "----- Connection Tests -----"
     test_direct_connection || true  # Don't increment failure counter for this one
-    test_pgbouncer_connection || ((failed++))
+    test_pgbouncer_connection "$DB_NAME" db_connection_result || ((failed++))
     test_database_connection || ((failed++))
     
     # Test with temporary user
