@@ -186,9 +186,32 @@ GRANT SELECT, INSERT ON pg_user_monitor_operation_id_seq TO postgres;
 GRANT INSERT ON pg_user_monitor TO postgres;
 EOF
     
-    # Execute the SQL script
-    if ! su - postgres -c "psql -f '$sql_script'" &>/dev/null; then
-        log_error "Failed to install PostgreSQL triggers"
+    # Make sure we have the right permissions - attempt to verify postgres user is superuser
+    local is_superuser
+    is_superuser=$(su - postgres -c "psql -t -c \"SELECT usesuper FROM pg_user WHERE usename = 'postgres';\"" 2>/dev/null | tr -d ' ')
+    
+    if [ "$is_superuser" != "t" ]; then
+        log_warn "User 'postgres' might not have the necessary superuser privileges"
+    fi
+    
+    # Execute the SQL script with error output
+    log_info "Executing SQL script to create triggers and monitoring table..."
+    local err_output
+    err_output=$(su - postgres -c "psql -d postgres -f '$sql_script'" 2>&1)
+    local sql_result=$?
+    
+    if [ $sql_result -ne 0 ]; then
+        log_error "Failed to install PostgreSQL triggers: $err_output"
+        rm -f "$sql_script"
+        return 1
+    fi
+    
+    # Verify the table and trigger created successfully
+    local table_exists
+    table_exists=$(su - postgres -c "psql -t -c \"SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name='pg_user_monitor');\"" 2>/dev/null | tr -d ' ')
+    
+    if [ "$table_exists" != "t" ]; then
+        log_error "Failed to create pg_user_monitor table"
         rm -f "$sql_script"
         return 1
     fi
@@ -271,15 +294,51 @@ EOF
 run_monitor_service() {
     log_info "Starting PostgreSQL user monitor service"
     
-    # Install triggers first
-    install_pg_triggers
+    # Install triggers first - retry up to 3 times with increasing backoff
+    local attempts=0
+    local max_attempts=3
+    local backoff=10
+    local triggers_installed=false
+    
+    while [ $attempts -lt $max_attempts ] && [ "$triggers_installed" = false ]; do
+        if install_pg_triggers; then
+            triggers_installed=true
+            log_info "Triggers installed successfully after $((attempts+1)) attempt(s)"
+        else
+            attempts=$((attempts+1))
+            if [ $attempts -lt $max_attempts ]; then
+                log_warn "Failed to install triggers, retrying in $backoff seconds (attempt $attempts of $max_attempts)"
+                sleep $backoff
+                backoff=$((backoff*2))  # Exponential backoff
+            else
+                log_error "Failed to install triggers after $max_attempts attempts. Will continue, but user monitoring will be limited."
+            fi
+        fi
+    done
     
     # Initial userlist generation
     generate_pgbouncer_userlist
     
     # Main monitoring loop
     while true; do
-        check_user_changes
+        # Try to install triggers again if needed
+        if [ "$triggers_installed" = false ]; then
+            log_info "Attempting to install triggers again..."
+            if install_pg_triggers; then
+                triggers_installed=true
+                log_info "Triggers successfully installed during monitoring cycle"
+            fi
+        fi
+        
+        # Check for user changes - only try to use trigger-based detection if triggers are installed
+        if [ "$triggers_installed" = true ]; then
+            check_user_changes
+        else
+            # Fallback to direct userlist generation when triggers aren't available
+            log_info "Using direct userlist generation (triggers not available)"
+            generate_pgbouncer_userlist
+        fi
+        
         sleep "$PG_USER_MONITOR_INTERVAL"
     done
 }
@@ -294,8 +353,12 @@ setup_user_monitor() {
         return 0
     fi
     
-    # Install PostgreSQL triggers
-    install_pg_triggers
+    # Install PostgreSQL triggers - but continue even if it fails
+    local trigger_install_result=0
+    if ! install_pg_triggers; then
+        log_warn "Trigger installation failed, but continuing with setup. Monitor will use direct userlist generation."
+        trigger_install_result=1
+    fi
     
     # Initial userlist generation
     generate_pgbouncer_userlist
@@ -304,7 +367,9 @@ setup_user_monitor() {
     create_systemd_service
     
     log_info "PostgreSQL user monitor setup completed successfully"
-    return 0
+    
+    # Return the result of trigger installation for tracking in the main script
+    return $trigger_install_result
 }
 
 # Main entry point

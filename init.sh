@@ -247,7 +247,7 @@ run_tests() {
     # Ensure final logs are displayed
     sync
     
-    # Don't print "Tests executed successfully" here as it's already printed by run_tests.sh
+    # Check for success/failure without printing additional messages
     if [ $exit_code -ne 0 ]; then
         log_warn "Some tests failed with exit code $exit_code. Please check the logs for details."
     fi
@@ -411,6 +411,12 @@ setup_pg_user_monitor() {
     return 1
   fi
   
+  # Stop existing service if it's running
+  if systemctl is-active --quiet pg-user-monitor; then
+    log_info "Stopping existing pg-user-monitor service before reconfiguration..."
+    systemctl stop pg-user-monitor
+  fi
+  
   # Ensure the script is executable
   chmod +x "$script_path" 2>/dev/null || log_warn "Failed to set executable permission, will use bash explicitly"
   
@@ -419,10 +425,33 @@ setup_pg_user_monitor() {
   bash "$script_path"
   local result=$?
   
+  # Verify the service is running
+  if ! systemctl is-active --quiet pg-user-monitor; then
+    log_warn "pg-user-monitor service is not running after setup, attempting to start..."
+    systemctl start pg-user-monitor
+    
+    if ! systemctl is-active --quiet pg-user-monitor; then
+      log_error "Failed to start pg-user-monitor service"
+      return 1
+    else
+      log_info "pg-user-monitor service started successfully"
+    fi
+  fi
+  
+  # Verify if the triggers are installed properly
+  local table_exists
+  table_exists=$(su - postgres -c "psql -t -c \"SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name='pg_user_monitor');\"" 2>/dev/null | tr -d ' ')
+  
+  if [ "$table_exists" != "t" ]; then
+    log_warn "pg_user_monitor table does not exist - the monitor will use direct userlist generation instead of trigger-based detection"
+  else
+    log_info "pg_user_monitor table successfully created"
+  fi
+  
   if [ $result -eq 0 ]; then
     log_info "PostgreSQL user monitor setup completed successfully"
   else
-    log_error "PostgreSQL user monitor setup failed with exit code $result"
+    log_error "PostgreSQL user monitor setup completed with warnings (exit code $result)"
   fi
   
   return $result

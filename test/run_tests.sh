@@ -26,6 +26,7 @@ original_log_info() {
 log_info() {
     # Filter out the specific duplicate message
     if [[ "$1" == "Tests executed successfully" && "$TEST_RUNNER_SUCCESS_PRINTED" == "1" ]]; then
+        # Skip printing since it's already been printed
         return 0
     fi
     
