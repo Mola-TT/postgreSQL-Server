@@ -177,6 +177,11 @@ test_pgbouncer_connection() {
     local result_var="$2"
     local host="${3:-localhost}"
     
+    # If no database name is provided, use postgres as default
+    if [ -z "$db_name" ]; then
+        db_name="postgres"
+    fi
+    
     # Try with explicit SSL configuration to connect through pgbouncer
     if PGPASSWORD="$PG_SUPERUSER_PASSWORD" psql "host=$host port=$PGB_LISTEN_PORT dbname=$db_name user=postgres sslmode=require" -c "SELECT version();" -t --no-align --quiet --tuples-only > /dev/null 2>&1; then
         log_info "✓ PASS: Connected to PostgreSQL through pgbouncer on port $PGB_LISTEN_PORT to database '$db_name'"
