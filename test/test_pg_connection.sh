@@ -201,7 +201,14 @@ test_pgbouncer_connection() {
         fi
     fi
     
-    # ===== CRITICAL: Ensure userlist.txt exists and has postgres user =====
+    # Make sure PostgreSQL is running before proceeding
+    if ! systemctl is-active --quiet postgresql@*-main || ! systemctl is-active --quiet postgresql; then
+        log_error "PostgreSQL service is not running, cannot proceed with pgbouncer connection test"
+        eval "$result_var=false"
+        return 1
+    fi
+    
+    # ===== CRITICAL: Pre-test validation of userlist.txt =====
     local userlist_path="/etc/pgbouncer/userlist.txt"
     local recovery_needed=false
     
@@ -228,41 +235,113 @@ test_pgbouncer_connection() {
     if [ "$recovery_needed" = true ]; then
         log_info "Performing userlist recovery process"
         
-        # Stage 1: Create userlist with postgres user
+        # Stage 1: Create userlist with postgres user using the enhanced function
         log_info "Stage 1: Creating pgbouncer userlist with postgres user"
         create_pgbouncer_userlist
         
-        # Check if recovery was successful
+        # Check if recovery was successful by verifying the userlist file
         if [ ! -f "$userlist_path" ] || ! grep -q "\"postgres\"" "$userlist_path"; then
             log_error "Stage 1 recovery failed - userlist creation unsuccessful"
             
-            # Stage 2: Force regenerate the userlist with full permissions
-            log_info "Stage 2: Force regenerating pgbouncer userlist with sudo"
+            # Stage 2: Force regenerate the userlist with full permissions using all available methods
+            log_info "Stage 2: Force regenerating pgbouncer userlist with emergency methods"
             
-            # Create temp userlist with emergency methods if necessary
+            # Try different emergency approach - attempt to extract postgres hash multiple ways
             local temp_userlist=$(mktemp)
-            if [ -n "$PG_SUPERUSER_PASSWORD" ]; then
+            local hash_extracted=false
+            
+            # Method 1: Try direct query for hash first (most reliable)
+            log_info "Emergency extraction method 1: Direct query from pg_authid"
+            if postgres_hash=$(su - postgres -c "psql -t -c \"SELECT rolpassword FROM pg_authid WHERE rolname='postgres';\"" 2>/dev/null | tr -d ' \n\r\t'); then
+                if [ -n "$postgres_hash" ]; then
+                    echo "\"postgres\" \"$postgres_hash\"" > "$temp_userlist"
+                    hash_extracted=true
+                    log_info "Successfully extracted postgres hash with direct query in emergency mode"
+                fi
+            fi
+            
+            # Method 2: If direct query failed, try password-based MD5 hash generation
+            if [ "$hash_extracted" = false ] && [ -n "$PG_SUPERUSER_PASSWORD" ]; then
+                log_info "Emergency extraction method 2: Generate MD5 hash from known password"
                 local md5pass=$(echo -n "md5$(echo -n "${PG_SUPERUSER_PASSWORD}postgres" | md5sum | cut -d' ' -f1)")
                 echo "\"postgres\" \"$md5pass\"" > "$temp_userlist"
-                log_warn "Created emergency MD5 authentication entry for postgres"
+                hash_extracted=true
+                log_warn "Created emergency MD5 authentication entry for postgres user"
+            fi
+            
+            # Method 3: Reset the postgres password if we have it
+            if [ "$hash_extracted" = false ] && [ -n "$PG_SUPERUSER_PASSWORD" ]; then
+                log_info "Emergency extraction method 3: Reset postgres password and extract new hash"
+                # Force reset password with scram-sha-256
+                su - postgres -c "psql -c \"ALTER SYSTEM SET password_encryption = 'scram-sha-256';\"" > /dev/null 2>&1
+                su - postgres -c "psql -c \"SELECT pg_reload_conf();\"" > /dev/null 2>&1
+                su - postgres -c "psql -c \"ALTER USER postgres PASSWORD '$PG_SUPERUSER_PASSWORD';\"" > /dev/null 2>&1
                 
-                # Copy to destination with full permissions
-                sudo mkdir -p "/etc/pgbouncer" 2>/dev/null || mkdir -p "/etc/pgbouncer" 2>/dev/null
-                sudo cp "$temp_userlist" "$userlist_path" 2>/dev/null || cat "$temp_userlist" | sudo tee "$userlist_path" > /dev/null
-                sudo chown postgres:postgres "$userlist_path" 2>/dev/null || chown postgres:postgres "$userlist_path" 2>/dev/null
-                sudo chmod 600 "$userlist_path" 2>/dev/null || chmod 600 "$userlist_path" 2>/dev/null
-                rm -f "$temp_userlist"
-                
-                # Verify the file exists with postgres user
-                if [ -f "$userlist_path" ] && grep -q "\"postgres\"" "$userlist_path"; then
-                    log_info "Stage 2 recovery successful"
-                else
-                    log_error "Stage 2 recovery failed - could not create or populate userlist.txt"
-                    eval "$result_var=false"
-                    return 1
+                # Extract new hash
+                if postgres_hash=$(su - postgres -c "psql -t -c \"SELECT rolpassword FROM pg_authid WHERE rolname='postgres';\"" 2>/dev/null | tr -d ' \n\r\t'); then
+                    if [ -n "$postgres_hash" ]; then
+                        echo "\"postgres\" \"$postgres_hash\"" > "$temp_userlist"
+                        hash_extracted=true
+                        log_info "Successfully extracted new postgres hash after password reset"
+                    fi
                 fi
+            fi
+            
+            # Method 4: Last resort - hardcoded MD5 hash if we can't get anything else
+            if [ "$hash_extracted" = false ] && [ -n "$PG_SUPERUSER_PASSWORD" ]; then
+                log_warn "Emergency extraction method 4: Last resort hardcoded MD5 hash"
+                # Generate an MD5 hash from the password (less secure but should work)
+                local md5pass=$(echo -n "md5$(echo -n "${PG_SUPERUSER_PASSWORD}postgres" | md5sum | cut -d' ' -f1)")
+                echo "\"postgres\" \"$md5pass\"" > "$temp_userlist"
+                hash_extracted=true
+                log_warn "Created last-resort MD5 authentication entry for postgres"
+            fi
+            
+            # If we couldn't extract a hash any way, we have to give up
+            if [ "$hash_extracted" = false ]; then
+                log_error "All emergency hash extraction methods failed - cannot continue without postgres user hash"
+                rm -f "$temp_userlist"
+                eval "$result_var=false"
+                return 1
+            fi
+            
+            # Copy to destination with full permissions using multiple methods for reliability
+            log_info "Installing emergency userlist file"
+            
+            # Create directory if it doesn't exist
+            sudo mkdir -p "/etc/pgbouncer" 2>/dev/null || mkdir -p "/etc/pgbouncer" 2>/dev/null
+            
+            # Try multiple methods to ensure the file gets copied
+            if ! sudo cp "$temp_userlist" "$userlist_path" 2>/dev/null; then
+                if ! cp "$temp_userlist" "$userlist_path" 2>/dev/null; then
+                    if ! cat "$temp_userlist" | sudo tee "$userlist_path" > /dev/null; then
+                        if ! (cat "$temp_userlist" | sudo bash -c "cat > $userlist_path") 2>/dev/null; then
+                            log_error "All methods to copy userlist failed in emergency mode"
+                            rm -f "$temp_userlist"
+                            eval "$result_var=false"
+                            return 1
+                        fi
+                    fi
+                fi
+            fi
+            
+            # Set proper permissions with multiple methods
+            sudo chown postgres:postgres "$userlist_path" 2>/dev/null || chown postgres:postgres "$userlist_path" 2>/dev/null
+            sudo chmod 600 "$userlist_path" 2>/dev/null || chmod 600 "$userlist_path" 2>/dev/null
+            
+            # Verify additional permissions
+            permissions=$(stat -c "%a" "$userlist_path" 2>/dev/null || stat -f "%p" "$userlist_path" 2>/dev/null)
+            owner=$(stat -c "%U:%G" "$userlist_path" 2>/dev/null || stat -f "%Su:%Sg" "$userlist_path" 2>/dev/null)
+            log_info "Userlist file permissions: $permissions, owner: $owner"
+            
+            # Clean up temp file
+            rm -f "$temp_userlist"
+            
+            # Verify the file exists with postgres user
+            if [ -f "$userlist_path" ] && grep -q "\"postgres\"" "$userlist_path"; then
+                log_info "Stage 2 recovery successful - emergency userlist created"
             else
-                log_error "Cannot create emergency userlist - PG_SUPERUSER_PASSWORD not set"
+                log_error "Stage 2 recovery failed - could not create or populate userlist.txt"
                 eval "$result_var=false"
                 return 1
             fi
@@ -270,7 +349,7 @@ test_pgbouncer_connection() {
             log_info "Stage 1 recovery successful"
         fi
         
-        # Final verification of permissions
+        # Final verification of permissions regardless of which method succeeded
         sudo chown postgres:postgres "$userlist_path" 2>/dev/null || chown postgres:postgres "$userlist_path" 2>/dev/null
         sudo chmod 600 "$userlist_path" 2>/dev/null || chmod 600 "$userlist_path" 2>/dev/null
         
@@ -278,6 +357,13 @@ test_pgbouncer_connection() {
         log_info "Restarting pgbouncer to apply userlist changes"
         systemctl restart pgbouncer
         sleep 5  # Give pgbouncer time to restart
+        
+        # Verify pgbouncer is still running after restart
+        if ! systemctl is-active --quiet pgbouncer; then
+            log_error "pgbouncer failed to restart after userlist recovery"
+            systemctl start pgbouncer
+            sleep 3
+        fi
     fi
     
     # Try connecting multiple times, with retries
@@ -310,32 +396,75 @@ test_pgbouncer_connection() {
                 
                 # Create temp userlist
                 local temp_userlist=$(mktemp)
+                local recovery_success=false
                 
                 # Try all available methods to extract hash
-                if type extract_hash &>/dev/null && extract_hash "postgres" "$temp_userlist"; then
+                if type extract_hash &>/dev/null && extract_hash "postgres" "$temp_userlist" && [ -s "$temp_userlist" ] && grep -q "\"postgres\"" "$temp_userlist"; then
                     log_info "Successfully extracted postgres hash with extract_hash function"
+                    recovery_success=true
                 elif [ -n "$PG_SUPERUSER_PASSWORD" ]; then
-                    # Emergency MD5 hash generation
-                    local md5pass=$(echo -n "md5$(echo -n "${PG_SUPERUSER_PASSWORD}postgres" | md5sum | cut -d' ' -f1)")
-                    echo "\"postgres\" \"$md5pass\"" > "$temp_userlist"
-                    log_warn "Created emergency MD5 authentication entry for postgres"
+                    # Try to reset the postgres password
+                    log_info "Resetting postgres password and extracting hash"
+                    su - postgres -c "psql -c \"ALTER SYSTEM SET password_encryption = 'scram-sha-256';\"" > /dev/null 2>&1
+                    su - postgres -c "psql -c \"SELECT pg_reload_conf();\"" > /dev/null 2>&1
+                    su - postgres -c "psql -c \"ALTER USER postgres PASSWORD '$PG_SUPERUSER_PASSWORD';\"" > /dev/null 2>&1
+                    
+                    # Try to extract the new hash
+                    if postgres_hash=$(su - postgres -c "psql -t -c \"SELECT rolpassword FROM pg_authid WHERE rolname='postgres';\"" 2>/dev/null | tr -d ' \n\r\t'); then
+                        if [ -n "$postgres_hash" ]; then
+                            echo "\"postgres\" \"$postgres_hash\"" > "$temp_userlist"
+                            if [ -s "$temp_userlist" ] && grep -q "\"postgres\"" "$temp_userlist"; then
+                                log_info "Successfully extracted new hash after password reset"
+                                recovery_success=true
+                            fi
+                        fi
+                    fi
+                    
+                    # Emergency MD5 hash generation if all else fails
+                    if [ "$recovery_success" = false ]; then
+                        log_warn "Creating emergency MD5 authentication entry for postgres"
+                        local md5pass=$(echo -n "md5$(echo -n "${PG_SUPERUSER_PASSWORD}postgres" | md5sum | cut -d' ' -f1)")
+                        echo "\"postgres\" \"$md5pass\"" > "$temp_userlist"
+                        recovery_success=true
+                    fi
                 else
                     log_error "All hash extraction methods failed and password not available"
+                    rm -f "$temp_userlist"
                     eval "$result_var=false"
                     return 1
                 fi
                 
                 # Copy to destination with full permissions
-                sudo mkdir -p "/etc/pgbouncer" 2>/dev/null || mkdir -p "/etc/pgbouncer" 2>/dev/null
-                sudo cp "$temp_userlist" "$userlist_path" 2>/dev/null || cat "$temp_userlist" | sudo tee "$userlist_path" > /dev/null
-                sudo chown postgres:postgres "$userlist_path" 2>/dev/null || chown postgres:postgres "$userlist_path" 2>/dev/null
-                sudo chmod 600 "$userlist_path" 2>/dev/null || chmod 600 "$userlist_path" 2>/dev/null
-                rm -f "$temp_userlist"
-                
-                # Restart pgbouncer
-                log_info "Restarting pgbouncer to apply emergency userlist"
-                systemctl restart pgbouncer
-                sleep 5
+                if [ "$recovery_success" = true ]; then
+                    log_info "Installing recovery userlist"
+                    
+                    # Create directory if needed
+                    sudo mkdir -p "/etc/pgbouncer" 2>/dev/null || mkdir -p "/etc/pgbouncer" 2>/dev/null
+                    
+                    # Try multiple methods to copy the file
+                    if ! sudo cp "$temp_userlist" "$userlist_path" 2>/dev/null; then
+                        if ! cp "$temp_userlist" "$userlist_path" 2>/dev/null; then
+                            if ! cat "$temp_userlist" | sudo tee "$userlist_path" > /dev/null; then
+                                log_error "All methods to copy userlist failed in retry mechanism"
+                                rm -f "$temp_userlist"
+                                eval "$result_var=false"
+                                return 1
+                            fi
+                        fi
+                    fi
+                    
+                    # Set proper permissions with multiple methods
+                    sudo chown postgres:postgres "$userlist_path" 2>/dev/null || chown postgres:postgres "$userlist_path" 2>/dev/null
+                    sudo chmod 600 "$userlist_path" 2>/dev/null || chmod 600 "$userlist_path" 2>/dev/null
+                    
+                    # Restart pgbouncer
+                    log_info "Restarting pgbouncer to apply emergency userlist"
+                    systemctl restart pgbouncer
+                    sleep 5
+                    
+                    # Clean up
+                    rm -f "$temp_userlist"
+                fi
             elif [[ "$err_output" == *"could not connect to server"* ]]; then
                 log_error "Could not connect to pgbouncer - service may be down"
                 
@@ -371,23 +500,32 @@ create_pgbouncer_userlist() {
     # Get postgres password hash
     local temp_file=$(mktemp)
     local extraction_success=false
+    local auth_type="${PGB_AUTH_TYPE:-scram-sha-256}"
     
-    # Method 1: Try to use extract_hash function if available
+    # Method 1: Try extract_hash function (most robust method)
     if type extract_hash &>/dev/null; then
         log_info "Using extract_hash function to get postgres password hash"
         if extract_hash "postgres" "$temp_file"; then
-            extraction_success=true
-            log_info "Successfully extracted postgres password hash using extract_hash function"
+            # Verify the extracted hash is valid
+            if grep -q "\"postgres\"" "$temp_file" && [ -s "$temp_file" ]; then
+                extraction_success=true
+                log_info "Successfully extracted postgres password hash using extract_hash function"
+            else
+                log_warn "extract_hash function produced invalid output"
+            fi
         else
             log_warn "Failed to extract hash using extract_hash function"
         fi
     fi
     
-    # Method 2: Try to get hash directly from pg_authid if Method 1 failed
+    # Method 2: Direct query method
     if [ "$extraction_success" = false ]; then
         log_info "Trying direct SQL query to get postgres password hash"
+        # Clear the temp file first
+        echo "" > "$temp_file"
         if su - postgres -c "psql -t -c \"SELECT '\\\"postgres\\\" \\\"' || rolpassword || '\\\"' FROM pg_authid WHERE rolname='postgres';\"" 2>/dev/null | grep -v "^$" > "$temp_file"; then
-            if grep -q "\"postgres\"" "$temp_file"; then
+            # Verify the extracted hash is valid
+            if grep -q "\"postgres\"" "$temp_file" && [ -s "$temp_file" ]; then
                 extraction_success=true
                 log_info "Successfully extracted postgres password hash using direct SQL query"
             else
@@ -398,44 +536,52 @@ create_pgbouncer_userlist() {
         fi
     fi
     
-    # Method 3: Try minimal approach if previous methods failed
+    # Method 3: Raw hash extraction
     if [ "$extraction_success" = false ]; then
-        log_info "Trying minimal approach to get postgres password hash"
+        log_info "Trying raw hash extraction approach"
+        # Clear the temp file first
+        echo "" > "$temp_file"
         if su - postgres -c "psql -t -c \"SELECT rolpassword FROM pg_authid WHERE rolname='postgres';\"" 2>/dev/null | grep -v "^$" > "/tmp/pg_hash_$$.tmp"; then
             if [ -s "/tmp/pg_hash_$$.tmp" ]; then
                 local raw_hash=$(cat "/tmp/pg_hash_$$.tmp" | tr -d ' \n\r\t')
                 if [ -n "$raw_hash" ]; then
                     echo "\"postgres\" \"$raw_hash\"" > "$temp_file"
-                    if grep -q "\"postgres\"" "$temp_file"; then
+                    # Verify the entry is properly formatted
+                    if grep -q "\"postgres\"" "$temp_file" && [ -s "$temp_file" ]; then
                         extraction_success=true
-                        log_info "Successfully extracted postgres password hash using minimal approach"
+                        log_info "Successfully extracted postgres password hash using raw hash extraction"
                     fi
                 fi
             fi
             # Clean up
             rm -f "/tmp/pg_hash_$$.tmp" 2>/dev/null
         else
-            log_warn "Failed to extract hash using minimal approach"
+            log_warn "Failed to extract hash using raw hash extraction"
         fi
     fi
     
-    # Method 4: Try setting/resetting the password if available
+    # Method 4: Reset password and retry if previous methods failed
     if [ "$extraction_success" = false ] && [ -n "$PG_SUPERUSER_PASSWORD" ]; then
-        log_info "Trying to reset postgres password to force rehashing"
-        # Force set password encryption to SCRAM-SHA-256
-        su - postgres -c "psql -c \"ALTER SYSTEM SET password_encryption = 'scram-sha-256';\"" > /dev/null 2>&1
-        su - postgres -c "psql -c \"SELECT pg_reload_conf();\"" > /dev/null 2>&1
+        log_info "Resetting postgres password to force rehashing"
+        # Force set password encryption based on auth type
+        if [ "$auth_type" = "scram-sha-256" ]; then
+            su - postgres -c "psql -c \"ALTER SYSTEM SET password_encryption = 'scram-sha-256';\"" > /dev/null 2>&1
+            su - postgres -c "psql -c \"SELECT pg_reload_conf();\"" > /dev/null 2>&1
+            log_info "Set password_encryption to scram-sha-256"
+        fi
         
-        # Reset postgres user password to force rehashing
+        # Reset postgres user password
         su - postgres -c "psql -c \"ALTER USER postgres PASSWORD '$PG_SUPERUSER_PASSWORD';\"" > /dev/null 2>&1
+        log_info "Reset postgres user password"
         
-        # Try to get hash again
+        # Try to extract hash again after password reset
         if su - postgres -c "psql -t -c \"SELECT rolpassword FROM pg_authid WHERE rolname='postgres';\"" 2>/dev/null | grep -v "^$" > "/tmp/pg_hash_$$.tmp"; then
             if [ -s "/tmp/pg_hash_$$.tmp" ]; then
                 local raw_hash=$(cat "/tmp/pg_hash_$$.tmp" | tr -d ' \n\r\t')
                 if [ -n "$raw_hash" ]; then
                     echo "\"postgres\" \"$raw_hash\"" > "$temp_file"
-                    if grep -q "\"postgres\"" "$temp_file"; then
+                    # Verify the entry is properly formatted
+                    if grep -q "\"postgres\"" "$temp_file" && [ -s "$temp_file" ]; then
                         extraction_success=true
                         log_info "Successfully extracted postgres password hash after password reset"
                     fi
@@ -448,71 +594,77 @@ create_pgbouncer_userlist() {
         fi
     fi
     
-    # Method 5: Create MD5 hash directly if all other methods fail
+    # Method 5: Emergency MD5 fallback if all other methods fail
     if [ "$extraction_success" = false ] && [ -n "$PG_SUPERUSER_PASSWORD" ]; then
-        log_info "Creating emergency MD5 hash for pgbouncer authentication"
+        log_warn "All extraction methods failed, creating emergency MD5 hash"
         local md5pass=$(echo -n "md5$(echo -n "${PG_SUPERUSER_PASSWORD}postgres" | md5sum | cut -d' ' -f1)")
         echo "\"postgres\" \"$md5pass\"" > "$temp_file"
         extraction_success=true
         log_warn "Created emergency MD5 hash for postgres user - may not work with scram-sha-256"
     fi
     
-    # If all methods failed
+    # If all methods failed and we don't have the password
     if [ "$extraction_success" = false ]; then
         log_error "All methods to extract postgres password hash failed"
-        log_error "Cannot create pgbouncer userlist: No password hash available and PG_SUPERUSER_PASSWORD not set"
+        log_error "Cannot create pgbouncer userlist without a valid postgres user entry"
         rm -f "$temp_file"
         return 1
     fi
     
-    # Install the userlist file
+    # Install the userlist file with multiple fallback methods
     if [ -s "$temp_file" ]; then
         # Create directory if it doesn't exist
         sudo mkdir -p "/etc/pgbouncer" 2>/dev/null || mkdir -p "/etc/pgbouncer" 2>/dev/null
         
-        # Try multiple methods to copy the file to ensure it works
+        # Method 1: Try sudo cp
         if ! sudo cp "$temp_file" "/etc/pgbouncer/userlist.txt" 2>/dev/null; then
-            log_warn "Failed to copy userlist file using sudo cp, trying alternative methods"
+            log_warn "Failed to copy userlist with sudo cp, trying alternative methods"
             
+            # Method 2: Try direct cp
             if ! cp "$temp_file" "/etc/pgbouncer/userlist.txt" 2>/dev/null; then
-                log_warn "Failed to copy userlist file using cp, trying cat | sudo tee"
+                log_warn "Failed to copy userlist with cp, trying cat | sudo tee"
                 
+                # Method 3: Try cat | sudo tee
                 if ! cat "$temp_file" | sudo tee "/etc/pgbouncer/userlist.txt" > /dev/null 2>&1; then
-                    log_error "All methods to copy userlist file failed"
-                    rm -f "$temp_file"
-                    return 1
+                    # Method 4: Last resort with cat and redirection
+                    if ! (cat "$temp_file" | sudo bash -c 'cat > /etc/pgbouncer/userlist.txt') 2>/dev/null; then
+                        log_error "All methods to copy userlist file failed"
+                        rm -f "$temp_file"
+                        return 1
+                    fi
                 fi
             fi
         fi
         
-        # Set proper permissions - critical for pgbouncer to work correctly
+        # Set secure permissions - using multiple methods for reliability
         sudo chown postgres:postgres "/etc/pgbouncer/userlist.txt" 2>/dev/null || chown postgres:postgres "/etc/pgbouncer/userlist.txt" 2>/dev/null
         sudo chmod 600 "/etc/pgbouncer/userlist.txt" 2>/dev/null || chmod 600 "/etc/pgbouncer/userlist.txt" 2>/dev/null
         
-        # Double-check permissions and ownership
+        # Verify permissions
         local permissions=$(stat -c "%a" "/etc/pgbouncer/userlist.txt" 2>/dev/null || stat -f "%p" "/etc/pgbouncer/userlist.txt" 2>/dev/null)
         local owner=$(stat -c "%U:%G" "/etc/pgbouncer/userlist.txt" 2>/dev/null || stat -f "%Su:%Sg" "/etc/pgbouncer/userlist.txt" 2>/dev/null)
         
         if [ "$permissions" != "600" ] || [ "$owner" != "postgres:postgres" ]; then
-            log_warn "Incorrect userlist.txt permissions or ownership after creation (permissions: $permissions, owner: $owner)"
-            log_info "Trying again to fix permissions and ownership with more aggressive methods"
+            log_warn "Userlist file has incorrect permissions or ownership: permissions=$permissions, owner=$owner"
+            log_info "Trying again with more aggressive methods"
             
-            # Try with sudo again
+            # Try with sudo and explicit commands
             sudo chown postgres:postgres "/etc/pgbouncer/userlist.txt" 2>/dev/null
             sudo chmod 600 "/etc/pgbouncer/userlist.txt" 2>/dev/null
             
-            # Check one more time
-            permissions=$(stat -c "%a" "/etc/pgbouncer/userlist.txt" 2>/dev/null || stat -f "%p" "/etc/pgbouncer/userlist.txt" 2>/dev/null)
-            owner=$(stat -c "%U:%G" "/etc/pgbouncer/userlist.txt" 2>/dev/null || stat -f "%Su:%Sg" "/etc/pgbouncer/userlist.txt" 2>/dev/null)
-            log_info "Final permissions: $permissions, owner: $owner"
+            # Try with direct root command if available
+            if command -v runuser &>/dev/null; then
+                sudo runuser -u root -- chown postgres:postgres "/etc/pgbouncer/userlist.txt" 2>/dev/null
+                sudo runuser -u root -- chmod 600 "/etc/pgbouncer/userlist.txt" 2>/dev/null
+            fi
         fi
         
-        # Verify file was created with postgres user
+        # Final verification
         if grep -q "\"postgres\"" "/etc/pgbouncer/userlist.txt"; then
             log_info "Successfully created pgbouncer userlist with postgres user"
             
-            # Restart pgbouncer to apply changes
-            log_info "Restarting pgbouncer to apply new userlist"
+            # Restart pgbouncer for changes to take effect
+            log_info "Restarting pgbouncer to apply changes"
             if ! systemctl restart pgbouncer > /dev/null 2>&1; then
                 log_warn "Failed to restart pgbouncer, trying to start if not running"
                 systemctl start pgbouncer > /dev/null 2>&1
@@ -520,6 +672,13 @@ create_pgbouncer_userlist() {
             
             # Wait for pgbouncer to restart
             sleep 5
+            
+            # Check pgbouncer status
+            if systemctl is-active --quiet pgbouncer; then
+                log_info "pgbouncer is running after restart"
+            else
+                log_warn "pgbouncer is not running after restart attempt"
+            fi
             
             rm -f "$temp_file"
             return 0
