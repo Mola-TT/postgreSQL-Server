@@ -67,6 +67,61 @@ install_postgresql() {
     return 1
   fi
   
+  # Install pgvector extension
+  log_info "Checking if pgvector extension should be installed..."
+  
+  # Only install pgvector if enabled in the configuration
+  if [ "${PG_ENABLE_PGVECTOR:-true}" = "true" ]; then
+    log_info "Installing pgvector extension for vector similarity search..."
+    
+    # Install build dependencies
+    log_info "Installing build dependencies for pgvector..."
+    if ! install_package_with_retry "build-essential postgresql-server-dev-all git" 5 30; then
+      log_warn "Failed to install build dependencies for pgvector, but continuing"
+    else
+      # Clone pgvector repository
+      log_info "Cloning pgvector repository..."
+      git_temp_dir=$(mktemp -d)
+      if ! git clone --depth 1 https://github.com/pgvector/pgvector.git "$git_temp_dir" > /dev/null 2>&1; then
+        log_warn "Failed to clone pgvector repository, but continuing"
+      else
+        # Build and install pgvector
+        log_info "Building and installing pgvector..."
+        cd "$git_temp_dir" && make > /dev/null 2>&1 && make install > /dev/null 2>&1
+        
+        if [ $? -eq 0 ]; then
+          log_info "Successfully installed pgvector"
+          
+          # Enable the extension in the database
+          log_info "Enabling pgvector extension in the database..."
+          su - postgres -c "psql -c 'CREATE EXTENSION IF NOT EXISTS vector;'" > /dev/null 2>&1
+          
+          if [ $? -eq 0 ]; then
+            log_info "Successfully enabled pgvector extension"
+            
+            # Set default vector dimension if specified
+            if [ -n "${PGVECTOR_DEFAULT_DIM}" ] && [ "${PGVECTOR_DEFAULT_DIM}" -gt 0 ]; then
+              log_info "Setting default vector dimension to ${PGVECTOR_DEFAULT_DIM}..."
+              su - postgres -c "psql -c \"ALTER SYSTEM SET vector.dim_default = ${PGVECTOR_DEFAULT_DIM};\"" > /dev/null 2>&1
+              su - postgres -c "psql -c \"SELECT pg_reload_conf();\"" > /dev/null 2>&1
+              log_info "Default vector dimension set to ${PGVECTOR_DEFAULT_DIM}"
+            fi
+          else
+            log_warn "Failed to enable pgvector extension, but continuing"
+          fi
+        else
+          log_warn "Failed to build and install pgvector, but continuing"
+        fi
+        
+        # Clean up
+        cd - > /dev/null 2>&1
+        rm -rf "$git_temp_dir"
+      fi
+    fi
+  else
+    log_info "Skipping pgvector installation (PG_ENABLE_PGVECTOR is not set to true)"
+  fi
+  
   # Enable and start PostgreSQL service
   log_info "Enabling and starting PostgreSQL service..."
   systemctl enable postgresql > /dev/null 2>&1

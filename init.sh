@@ -247,9 +247,8 @@ run_tests() {
     # Ensure final logs are displayed
     sync
     
-    if [ $exit_code -eq 0 ]; then
-        log_info "Tests executed successfully"
-    else
+    # Don't print "Tests executed successfully" here as it's already printed by run_tests.sh
+    if [ $exit_code -ne 0 ]; then
         log_warn "Some tests failed with exit code $exit_code. Please check the logs for details."
     fi
     
