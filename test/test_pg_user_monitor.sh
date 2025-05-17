@@ -220,48 +220,40 @@ run_tests() {
         # Wait for monitor to update userlist
         log_info "Waiting for user monitor to update userlist..."
         
-        # Wait for up to 40 seconds (check every 5 seconds)
-        for i in {1..8}; do
-            sleep 5
-            
-            # Check if user was added to userlist
+        # Wait for up to 10 seconds (check every 2 seconds since we shortened the monitor interval)
+        for i in {1..5}; do
             if grep -q "\"$TEST_USER\"" "$PGB_USERLIST_PATH"; then
-                log_pass "Test user was added to userlist in limited functionality mode"
-                USER_ADDED=true
+                log_info "[PASS] Test user was added to userlist"
                 break
             fi
+            log_info "Waiting for userlist update... (attempt $i/5)"
+            sleep 2
         done
         
-        # If user wasn't added to userlist after waiting, force a userlist update
-        if [ "$USER_ADDED" != "true" ]; then
-            log_warn "User was not automatically added to userlist within timeout period"
+        # Check if the user was added to userlist
+        if ! grep -q "\"$TEST_USER\"" "$PGB_USERLIST_PATH"; then
+            log_warning "User was not automatically added to userlist within timeout period"
             log_info "Forcing userlist update by restarting service..."
             
-            # Restart the monitor service to force an update
-            execute_silently "systemctl restart $PG_USER_MONITOR_SERVICE_NAME" \
-                "Restarted user monitor service" \
-                "Failed to restart user monitor service"
+            # Restart the service to force an update
+            systemctl restart "$PG_USER_MONITOR_SERVICE_NAME"
             
-            # Wait another 10 seconds
+            # Wait for the service to restart and update
             sleep 10
             
-            # Final check
+            # Check again
             if grep -q "\"$TEST_USER\"" "$PGB_USERLIST_PATH"; then
-                log_pass "Test user was added to userlist after service restart"
-                USER_ADDED=true
+                log_info "[PASS] Test user was added to userlist after service restart"
             else
-                # In limited functionality mode, we'll just warn but not fail
-                log_warn "Test user was not added to userlist in limited functionality mode - manual intervention required"
-                USER_ADDED=false
-                # Don't set TESTS_FAILED=true - treat this as a warning in limited mode
+                log_error "[FAIL] Test user was not added to userlist even after service restart"
+                cleanup_test
+                exit 1
             fi
         fi
         
-        # Clean up test resources
+        # Clean up
         log_info "Cleaning up test resources..."
-        
-        # Drop the test user
-        execute_silently "su - postgres -c \"psql -c \\\"DROP USER IF EXISTS $TEST_USER;\\\"\"" \
+        execute_silently "su - postgres -c \"psql -c \\\"DROP USER $TEST_USER;\\\"\"" \
             "Dropped test user: $TEST_USER" \
             "Failed to drop test user"
     else

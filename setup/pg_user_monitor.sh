@@ -318,9 +318,10 @@ run_monitor_service() {
             if [ $attempts -lt $max_attempts ]; then
                 log_warn "Failed to install triggers, retrying in $backoff seconds (attempt $attempts of $max_attempts)"
                 sleep $backoff
-                backoff=$((backoff*2))  # Exponential backoff
+                backoff=$((backoff * 2))
             else
-                log_error "Failed to install triggers after $max_attempts attempts. Will continue, but user monitoring will be limited."
+                log_warn "Failed to install triggers after $max_attempts attempts"
+                log_warn "Running in limited functionality mode - will use direct userlist generation"
             fi
         fi
     done
@@ -328,33 +329,16 @@ run_monitor_service() {
     # Initial userlist generation
     generate_pgbouncer_userlist
     
-    # Use different monitoring intervals depending on mode
-    local limited_mode_interval=$((PG_USER_MONITOR_INTERVAL / 3))
-    if [ $limited_mode_interval -lt 10 ]; then
-        limited_mode_interval=10  # Minimum 10 seconds
-    fi
-    
     # Main monitoring loop
     while true; do
-        # Try to install triggers again if needed (but less frequently)
-        if [ "$triggers_installed" = false ] && [ $((RANDOM % 10)) -eq 0 ]; then
-            log_info "Attempting to install triggers again..."
-            if install_pg_triggers; then
-                triggers_installed=true
-                log_info "Triggers successfully installed during monitoring cycle"
-            fi
-        fi
-        
-        # Check for user changes - only try to use trigger-based detection if triggers are installed
-        if [ "$triggers_installed" = true ]; then
-            check_user_changes
-            sleep "$PG_USER_MONITOR_INTERVAL"
-        else
-            # Fallback to direct userlist generation when triggers aren't available
-            # In limited functionality mode, check more frequently
-            log_info "Using direct userlist generation (triggers not available)"
+        # In limited functionality mode, update more frequently
+        if [ "$triggers_installed" = false ]; then
             generate_pgbouncer_userlist
-            sleep "$limited_mode_interval"
+            sleep 5  # Check more frequently in limited functionality mode
+        else
+            # Check the monitoring table for changes or run a direct check if needed
+            check_user_changes
+            sleep "${PG_USER_MONITOR_INTERVAL}"
         fi
     done
 }
