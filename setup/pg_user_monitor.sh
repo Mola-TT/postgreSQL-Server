@@ -29,7 +29,7 @@ PG_USER_MONITOR_LOG="${PG_USER_MONITOR_LOG:-/var/log/pg_user_monitor.log}"
 PG_USER_MONITOR_ENABLED="${PG_USER_MONITOR_ENABLED:-true}"
 PG_USER_MONITOR_SERVICE_NAME="${PG_USER_MONITOR_SERVICE_NAME:-pg-user-monitor}"
 
-# Function to generate userlist.txt from PostgreSQL
+# Function to generate pgbouncer userlist from PostgreSQL
 generate_pgbouncer_userlist() {
     log_info "Generating pgbouncer userlist from PostgreSQL user database"
     
@@ -40,8 +40,18 @@ generate_pgbouncer_userlist() {
     local user_list
     user_list=$(su - postgres -c "psql -t -c \"SELECT usename FROM pg_catalog.pg_user WHERE usename NOT IN ('postgres') AND usesysid >= 16384;\"" 2>/dev/null | tr -d ' ')
     
-    # Always include postgres user
-    extract_hash "postgres" "$temp_userlist"
+    # Always include postgres user first
+    log_info "Extracting password hash for user: postgres"
+    if ! extract_hash "postgres" "$temp_userlist"; then
+        log_error "Failed to extract hash for postgres user - this is critical"
+        # Try a more direct approach for postgres user
+        su - postgres -c "psql -t -c \"SELECT '\\\"postgres\\\" \\\"' || rolpassword || '\\\"' FROM pg_authid WHERE rolname='postgres';\"" 2>/dev/null | grep -v "^$" >> "$temp_userlist"
+    fi
+    
+    # Verify postgres user was added
+    if ! grep -q "\"postgres\"" "$temp_userlist"; then
+        log_error "Critical error: Failed to add postgres user to userlist"
+    fi
     
     # Add each user to the userlist
     if [ -n "$user_list" ]; then
@@ -88,7 +98,15 @@ generate_pgbouncer_userlist() {
         
         # Set proper ownership and permissions
         chown postgres:postgres "$PGB_USERLIST_PATH" 2>/dev/null
-        chmod 640 "$PGB_USERLIST_PATH" 2>/dev/null
+        chmod 600 "$PGB_USERLIST_PATH" 2>/dev/null
+        
+        # Double check permissions
+        log_info "Verifying userlist file permissions"
+        local permissions
+        permissions=$(stat -c "%a" "$PGB_USERLIST_PATH" 2>/dev/null || stat -f "%p" "$PGB_USERLIST_PATH" 2>/dev/null)
+        local owner
+        owner=$(stat -c "%U:%G" "$PGB_USERLIST_PATH" 2>/dev/null || stat -f "%Su:%Sg" "$PGB_USERLIST_PATH" 2>/dev/null)
+        log_info "Userlist permissions: $permissions, owner: $owner"
         
         # Reload pgbouncer
         log_info "Reloading pgbouncer to apply new userlist"
@@ -335,6 +353,24 @@ run_monitor_service() {
         if [ "$triggers_installed" = false ]; then
             generate_pgbouncer_userlist
             sleep 2  # Check more frequently in limited functionality mode
+            
+            # Test connection to ensure pgbouncer is working
+            if ! PGPASSWORD="$PG_SUPERUSER_PASSWORD" psql "host=localhost port=$PGB_LISTEN_PORT dbname=postgres user=postgres sslmode=require" -c "SELECT 1;" &>/dev/null; then
+                log_warn "Connection to pgbouncer failed, checking auth file and restarting pgbouncer"
+                
+                # Verify userlist file exists and has proper permissions
+                if [ -f "$PGB_USERLIST_PATH" ]; then
+                    chown postgres:postgres "$PGB_USERLIST_PATH" 2>/dev/null
+                    chmod 600 "$PGB_USERLIST_PATH" 2>/dev/null
+                    
+                    # Force restart pgbouncer
+                    systemctl restart pgbouncer &>/dev/null
+                else
+                    log_error "Userlist file $PGB_USERLIST_PATH does not exist"
+                    # Generate a new userlist
+                    generate_pgbouncer_userlist
+                fi
+            fi
         else
             # Check the monitoring table for changes or run a direct check if needed
             check_user_changes

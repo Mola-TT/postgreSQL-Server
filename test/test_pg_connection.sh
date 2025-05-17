@@ -182,6 +182,9 @@ test_pgbouncer_connection() {
         db_name="postgres"
     fi
     
+    # Log the connection details for debugging
+    log_info "Attempting to connect to PostgreSQL through pgbouncer: host=$host port=$PGB_LISTEN_PORT dbname=$db_name user=postgres"
+    
     # Try with explicit SSL configuration to connect through pgbouncer
     if PGPASSWORD="$PG_SUPERUSER_PASSWORD" psql "host=$host port=$PGB_LISTEN_PORT dbname=$db_name user=postgres sslmode=require" -c "SELECT version();" -t --no-align --quiet --tuples-only > /dev/null 2>&1; then
         log_info "✓ PASS: Connected to PostgreSQL through pgbouncer on port $PGB_LISTEN_PORT to database '$db_name'"
@@ -191,6 +194,17 @@ test_pgbouncer_connection() {
         local err_output
         err_output=$(PGPASSWORD="$PG_SUPERUSER_PASSWORD" psql "host=$host port=$PGB_LISTEN_PORT dbname=$db_name user=postgres sslmode=require" -c "SELECT version();" 2>&1)
         log_warning "Failed to connect to PostgreSQL through pgbouncer on port $PGB_LISTEN_PORT to database '$db_name'. Error: $err_output"
+        
+        # If SASL auth failed, check auth file
+        if [[ "$err_output" == *"SASL authentication failed"* ]]; then
+            log_info "Checking pgbouncer auth file for postgres user..."
+            if ! grep -q "\"postgres\"" /etc/pgbouncer/userlist.txt; then
+                log_error "postgres user not found in pgbouncer userlist.txt"
+            else
+                log_info "postgres user exists in pgbouncer userlist.txt"
+            fi
+        fi
+        
         eval "$result_var=false"
         return 1
     fi
@@ -198,23 +212,23 @@ test_pgbouncer_connection() {
 
 # Test connection to specific database if configured
 test_database_connection() {
-    if [ "$DB_NAME" != "postgres" ]; then
-        # Try with consistent connection string format
-        if output=$(PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql "host=localhost port=${PGB_LISTEN_PORT} dbname=${DB_NAME} user=postgres sslmode=require" -c "SELECT 1 as connected;" -t 2>/dev/null); then
-            if [[ "$output" == *"1"* ]]; then
-                log_status_pass "Connected to database '${DB_NAME}'"
-                return 0
-            else
-                log_status_fail "Unexpected output from database connection: $output"
-                return 1
-            fi
+    if [ -z "$DB_NAME" ] || [ "$DB_NAME" = "postgres" ]; then
+        log_info "Database name is postgres or not set, skipping specific database connection test"
+        return 0
+    fi
+    
+    # Try with consistent connection string format
+    if output=$(PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql "host=localhost port=${PGB_LISTEN_PORT} dbname=${DB_NAME} user=postgres sslmode=require" -c "SELECT 1 as connected;" -t 2>/dev/null); then
+        if [[ "$output" == *"1"* ]]; then
+            log_status_pass "Connected to database '${DB_NAME}'"
+            return 0
         else
-            log_status_fail "Failed to connect to database '${DB_NAME}'"
+            log_status_fail "Unexpected output from database connection: $output"
             return 1
         fi
     else
-        log_info "Database name is postgres, skipping specific database connection test"
-        return 0
+        log_status_fail "Failed to connect to database '${DB_NAME}'"
+        return 1
     fi
 }
 
@@ -500,7 +514,11 @@ run_tests() {
     # Test connections
     log_info "----- Connection Tests -----"
     test_direct_connection || true  # Don't increment failure counter for this one
-    test_pgbouncer_connection "$DB_NAME" db_connection_result || ((failed++))
+    
+    # Use postgres as the database name if DB_NAME is not set
+    local test_db_name="${DB_NAME:-postgres}"
+    test_pgbouncer_connection "$test_db_name" db_connection_result || ((failed++))
+    
     test_database_connection || ((failed++))
     
     # Test with temporary user

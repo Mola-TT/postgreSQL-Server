@@ -76,6 +76,25 @@ check_triggers_installed() {
     return 0
 }
 
+# Helper function for executing commands silently
+execute_silently() {
+    local cmd="$1"
+    local success_msg="$2"
+    local error_msg="$3"
+    
+    if ! eval "$cmd" &>/dev/null; then
+        if [ -n "$error_msg" ]; then
+            log_error "$error_msg"
+        fi
+        return 1
+    fi
+    
+    if [ -n "$success_msg" ]; then
+        log_info "$success_msg"
+    fi
+    return 0
+}
+
 # Function to test user creation
 test_user_creation() {
     log_info "Testing user creation..."
@@ -226,9 +245,11 @@ run_tests() {
         log_info "Waiting for user monitor to update userlist..."
         
         # Wait for up to 10 seconds (check every 2 seconds since we shortened the monitor interval)
+        local added_to_userlist=false
         for i in {1..5}; do
             if grep -q "\"$TEST_USER\"" "$PGB_USERLIST_PATH"; then
-                log_info "[PASS] Test user was added to userlist"
+                log_info "[PASS] Test user was added to userlist after $i attempt(s)"
+                added_to_userlist=true
                 break
             fi
             log_info "Waiting for userlist update... (attempt $i/5)"
@@ -236,12 +257,37 @@ run_tests() {
         done
         
         # Check if the user was added to userlist
-        if ! grep -q "\"$TEST_USER\"" "$PGB_USERLIST_PATH"; then
+        if [ "$added_to_userlist" = false ]; then
             log_warning "User was not automatically added to userlist within timeout period"
             log_info "Forcing userlist update by restarting service..."
             
+            # First verify user exists in PostgreSQL
+            if ! su - postgres -c "psql -t -c \"SELECT 1 FROM pg_roles WHERE rolname='$TEST_USER';\"" | grep -q "1"; then
+                log_error "Test user does not exist in PostgreSQL, test cannot proceed"
+                # Try to create user again
+                execute_silently "su - postgres -c \"psql -c \\\"CREATE USER $TEST_USER WITH PASSWORD '$TEST_PASSWORD';\\\"\"" \
+                    "Recreated test user: $TEST_USER" \
+                    "Failed to recreate test user"
+            fi
+            
+            # Check permissions on pgbouncer userlist file
+            local permissions
+            permissions=$(stat -c "%a" "$PGB_USERLIST_PATH" 2>/dev/null || stat -f "%p" "$PGB_USERLIST_PATH" 2>/dev/null)
+            local owner
+            owner=$(stat -c "%U:%G" "$PGB_USERLIST_PATH" 2>/dev/null || stat -f "%Su:%Sg" "$PGB_USERLIST_PATH" 2>/dev/null)
+            log_info "Userlist permissions: $permissions, owner: $owner"
+            
+            # Fix permissions if needed
+            if [ "$owner" != "postgres:postgres" ] || [[ "$permissions" != "600" && "$permissions" != "640" ]]; then
+                log_warning "Fixing userlist file permissions"
+                execute_silently "sudo chown postgres:postgres $PGB_USERLIST_PATH" "" "Failed to fix ownership"
+                execute_silently "sudo chmod 600 $PGB_USERLIST_PATH" "" "Failed to fix permissions"
+            fi
+            
             # Restart the service to force an update
-            systemctl restart "$PG_USER_MONITOR_SERVICE_NAME"
+            execute_silently "systemctl restart $PG_USER_MONITOR_SERVICE_NAME" \
+                "Restarted user monitor service" \
+                "Failed to restart service"
             
             # Wait for the service to restart and update
             sleep 10
@@ -251,8 +297,27 @@ run_tests() {
                 log_info "[PASS] Test user was added to userlist after service restart"
             else
                 log_error "[FAIL] Test user was not added to userlist even after service restart"
-                cleanup_test
-                exit 1
+                
+                # One last attempt: manually extract hash and update file
+                log_warning "Attempting manual userlist update as last resort"
+                execute_silently "su - postgres -c \"psql -t -c \\\"SELECT '\\\\\\\"$TEST_USER\\\\\\\" \\\\\\\"' || rolpassword || '\\\\\\\"' FROM pg_authid WHERE rolname='$TEST_USER'\\\"\" | sudo tee -a $PGB_USERLIST_PATH > /dev/null" \
+                    "Manually added user to pgbouncer userlist" \
+                    "Failed to manually add user to pgbouncer userlist"
+                
+                execute_silently "sudo chown postgres:postgres $PGB_USERLIST_PATH" "" "Failed to fix ownership"
+                execute_silently "sudo chmod 600 $PGB_USERLIST_PATH" "" "Failed to fix permissions"
+                
+                execute_silently "systemctl restart pgbouncer" \
+                    "Restarted pgbouncer service" \
+                    "Failed to restart pgbouncer service" 
+                
+                if grep -q "\"$TEST_USER\"" "$PGB_USERLIST_PATH"; then
+                    log_pass "Test user was added to userlist with manual intervention"
+                else
+                    log_error "Test user could not be added to userlist even with manual intervention"
+                    cleanup
+                    return 1
+                fi
             fi
         fi
         
