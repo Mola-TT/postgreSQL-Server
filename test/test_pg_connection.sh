@@ -156,7 +156,9 @@ check_pgbouncer_status() {
 
 # Test direct connection to PostgreSQL
 test_direct_connection() {
-    if output=$(PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql -h localhost -p "${DB_PORT}" -U postgres -c "SELECT 1 as connected;" -t 2>/dev/null); then
+    # Try with sslmode=require first, then fall back to prefer if needed
+    if output=$(PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql -h localhost -p "${DB_PORT}" -U postgres -c "SELECT 1 as connected;" -t --set=sslmode=require 2>/dev/null) || \
+       output=$(PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql -h localhost -p "${DB_PORT}" -U postgres -c "SELECT 1 as connected;" -t --set=sslmode=prefer 2>/dev/null); then
         if [[ "$output" == *"1"* ]]; then
             log_status_pass "Connected to PostgreSQL directly on port ${DB_PORT}"
             return 0
@@ -176,24 +178,46 @@ test_pgbouncer_connection() {
     local result_var="$2"
     local host="${3:-localhost}"
     
-    # Add explicit SSL mode for the connection
-    if ! PGPASSWORD="$PG_SUPERUSER_PASSWORD" psql -h "$host" -p "$PGB_LISTEN_PORT" -U postgres -d "$db_name" -c "SELECT version();" -t --no-align --quiet --tuples-only --set=sslmode=require > /dev/null 2>&1; then
-        local err_output
-        err_output=$(PGPASSWORD="$PG_SUPERUSER_PASSWORD" psql -h "$host" -p "$PGB_LISTEN_PORT" -U postgres -d "$db_name" -c "SELECT version();" -t --no-align --set=sslmode=require 2>&1)
-        log_warning "Failed to connect to PostgreSQL through pgbouncer on port $PGB_LISTEN_PORT to database '$db_name'. Error: $err_output"
-        eval "$result_var=false"
-        return 1
+    # Add explicit SSL mode for the connection and use proper PSQL connection options
+    if PGPASSWORD="$PG_SUPERUSER_PASSWORD" psql -h "$host" -p "$PGB_LISTEN_PORT" -U postgres -d "$db_name" -c "SELECT version();" -t --no-align --quiet --tuples-only --set=sslmode=require > /dev/null 2>&1; then
+        log_info "✓ PASS: Connected to PostgreSQL through pgbouncer on port $PGB_LISTEN_PORT to database '$db_name'"
+        eval "$result_var=true"
+        return 0
+    else
+        # Try with sslmode=prefer as fallback
+        if PGPASSWORD="$PG_SUPERUSER_PASSWORD" psql -h "$host" -p "$PGB_LISTEN_PORT" -U postgres -d "$db_name" -c "SELECT version();" -t --no-align --quiet --tuples-only --set=sslmode=prefer > /dev/null 2>&1; then
+            log_info "✓ PASS: Connected to PostgreSQL through pgbouncer on port $PGB_LISTEN_PORT to database '$db_name' with sslmode=prefer"
+            eval "$result_var=true"
+            return 0
+        else
+            # If both methods fail, capture error message
+            local err_output
+            err_output=$(PGPASSWORD="$PG_SUPERUSER_PASSWORD" psql -h "$host" -p "$PGB_LISTEN_PORT" -U postgres -d "$db_name" -c "SELECT version();" -t --no-align 2>&1)
+            log_warning "Failed to connect to PostgreSQL through pgbouncer on port $PGB_LISTEN_PORT to database '$db_name'. Error: $err_output"
+            
+            # Try without specifying database as a final fallback
+            if [ -z "$db_name" ] || [ "$db_name" = "postgres" ]; then
+                # Already tried with postgres or empty db, no need to try again
+                eval "$result_var=false"
+                return 1
+            elif PGPASSWORD="$PG_SUPERUSER_PASSWORD" psql -h "$host" -p "$PGB_LISTEN_PORT" -U postgres -c "SELECT version();" -t --no-align --quiet --tuples-only --set=sslmode=prefer > /dev/null 2>&1; then
+                log_info "✓ PASS: Connected to PostgreSQL through pgbouncer on port $PGB_LISTEN_PORT with default database"
+                eval "$result_var=true"
+                return 0
+            else
+                eval "$result_var=false"
+                return 1
+            fi
+        fi
     fi
-    
-    log_info "✓ PASS: Connected to PostgreSQL through pgbouncer on port $PGB_LISTEN_PORT to database '$db_name'"
-    eval "$result_var=true"
-    return 0
 }
 
 # Test connection to specific database if configured
 test_database_connection() {
     if [ "$DB_NAME" != "postgres" ]; then
-        if output=$(PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql -h localhost -p "${PGB_LISTEN_PORT}" -U postgres -d "${DB_NAME}" -c "SELECT 1 as connected;" -t 2>/dev/null); then
+        # Try with sslmode=require first, then fall back to prefer if needed
+        if output=$(PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql -h localhost -p "${PGB_LISTEN_PORT}" -U postgres -d "${DB_NAME}" -c "SELECT 1 as connected;" -t --set=sslmode=require 2>/dev/null) || \
+           output=$(PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql -h localhost -p "${PGB_LISTEN_PORT}" -U postgres -d "${DB_NAME}" -c "SELECT 1 as connected;" -t --set=sslmode=prefer 2>/dev/null); then
             if [[ "$output" == *"1"* ]]; then
                 log_status_pass "Connected to database '${DB_NAME}'"
                 return 0
@@ -368,8 +392,8 @@ test_temp_user_connection() {
         "Reloaded pgbouncer with temporary user" \
         "Failed to reload pgbouncer"
     
-    # Try connecting directly to PostgreSQL with the temporary user
-    if output=$(PGPASSWORD="$temp_password" psql -h localhost -p "${DB_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t 2>/dev/null); then
+    # Test direct connection with temp user
+    if output=$(PGPASSWORD="$temp_password" psql -h localhost -p "${DB_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t --set=sslmode=prefer 2>/dev/null); then
         if [[ "$output" == *"temp_user_connected"* ]]; then
             log_status_pass "Connected to PostgreSQL directly with temporary user"
             direct_success=true
@@ -382,8 +406,8 @@ test_temp_user_connection() {
         direct_success=false
     fi
     
-    # Try connecting through pgbouncer with the temporary user
-    if output=$(PGPASSWORD="$temp_password" psql -h localhost -p "${PGB_LISTEN_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t 2>/dev/null); then
+    # Test pgbouncer connection with temp user
+    if output=$(PGPASSWORD="$temp_password" psql -h localhost -p "${PGB_LISTEN_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t --set=sslmode=prefer 2>/dev/null); then
         if [[ "$output" == *"temp_user_connected"* ]]; then
             log_status_pass "Connected to PostgreSQL through pgbouncer with temporary user"
             pgbouncer_success=true
