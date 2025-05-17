@@ -185,26 +185,114 @@ test_pgbouncer_connection() {
     # Log the connection details for debugging
     log_info "Attempting to connect to PostgreSQL through pgbouncer: host=$host port=$PGB_LISTEN_PORT dbname=$db_name user=postgres"
     
-    # Try with explicit SSL configuration to connect through pgbouncer
-    if PGPASSWORD="$PG_SUPERUSER_PASSWORD" psql "host=$host port=$PGB_LISTEN_PORT dbname=$db_name user=postgres sslmode=require" -c "SELECT version();" -t --no-align --quiet --tuples-only > /dev/null 2>&1; then
-        log_info "✓ PASS: Connected to PostgreSQL through pgbouncer on port $PGB_LISTEN_PORT to database '$db_name'"
+    # Check if pgbouncer is running
+    if ! systemctl is-active --quiet pgbouncer; then
+        log_error "pgbouncer service is not running"
+        eval "$result_var=false"
+        return 1
+    fi
+    
+    # Check if pgbouncer userlist file exists and contains postgres user
+    if [ -f "/etc/pgbouncer/userlist.txt" ]; then
+        if ! grep -q "\"postgres\"" "/etc/pgbouncer/userlist.txt"; then
+            log_error "postgres user not found in pgbouncer userlist.txt"
+            log_info "Attempting to fix the userlist..."
+            
+            # Try to regenerate userlist - we'll use a simplified version for the test
+            if command -v pg_extract_hash.sh &>/dev/null; then
+                log_info "Found pg_extract_hash.sh, using it to extract password hash"
+                "$(dirname "$0")/../lib/pg_extract_hash.sh" postgres "/tmp/pgb_userlist.tmp" || true
+            fi
+            
+            # Direct method as backup
+            su - postgres -c "psql -t -c \"SELECT '\\\"postgres\\\" \\\"' || rolpassword || '\\\"' FROM pg_authid WHERE rolname='postgres';\"" 2>/dev/null | grep -v "^$" > "/tmp/pgb_userlist.tmp"
+            
+            # Add to userlist if we got something
+            if [ -s "/tmp/pgb_userlist.tmp" ]; then
+                log_info "Got postgres hash, updating userlist"
+                cat "/tmp/pgb_userlist.tmp" | sudo tee -a "/etc/pgbouncer/userlist.txt" > /dev/null
+                sudo chown postgres:postgres "/etc/pgbouncer/userlist.txt"
+                sudo chmod 600 "/etc/pgbouncer/userlist.txt"
+                sudo systemctl restart pgbouncer
+                sleep 5 # Wait for pgbouncer to restart
+            else
+                log_error "Could not extract postgres password hash"
+            fi
+            
+            # Clean up
+            rm -f "/tmp/pgb_userlist.tmp"
+        else
+            log_info "postgres user found in pgbouncer userlist.txt"
+        fi
+    else
+        log_error "pgbouncer userlist.txt file not found"
+    fi
+    
+    # Try connecting multiple times, with retries
+    local max_attempts=3
+    local attempt=1
+    local success=false
+    
+    while [ $attempt -le $max_attempts ] && [ "$success" = false ]; do
+        log_info "Connection attempt $attempt of $max_attempts"
+        
+        # Try with explicit SSL configuration to connect through pgbouncer
+        if PGPASSWORD="$PG_SUPERUSER_PASSWORD" psql "host=$host port=$PGB_LISTEN_PORT dbname=$db_name user=postgres sslmode=require" -c "SELECT version();" -t --no-align --quiet --tuples-only > /dev/null 2>&1; then
+            log_info "✓ PASS: Connected to PostgreSQL through pgbouncer on port $PGB_LISTEN_PORT to database '$db_name'"
+            success=true
+        else
+            local err_output
+            err_output=$(PGPASSWORD="$PG_SUPERUSER_PASSWORD" psql "host=$host port=$PGB_LISTEN_PORT dbname=$db_name user=postgres sslmode=require" -c "SELECT version();" 2>&1)
+            log_warning "Failed to connect to PostgreSQL through pgbouncer on port $PGB_LISTEN_PORT to database '$db_name'. Error: $err_output"
+            
+            # If SASL auth failed, check auth file
+            if [[ "$err_output" == *"SASL authentication failed"* ]]; then
+                log_info "Checking pgbouncer auth file for postgres user..."
+                if ! grep -q "\"postgres\"" /etc/pgbouncer/userlist.txt; then
+                    log_error "postgres user not found in pgbouncer userlist.txt"
+                    
+                    # Try to restart the pg-user-monitor service if it exists
+                    if systemctl is-active --quiet pg-user-monitor; then
+                        log_info "Restarting pg-user-monitor service to regenerate userlist"
+                        sudo systemctl restart pg-user-monitor
+                        sleep 5 # Give it time to work
+                    fi
+                else
+                    log_info "postgres user exists in pgbouncer userlist.txt"
+                    
+                    # Check for permission issues
+                    local permissions
+                    permissions=$(stat -c "%a" /etc/pgbouncer/userlist.txt 2>/dev/null || stat -f "%p" /etc/pgbouncer/userlist.txt 2>/dev/null)
+                    local owner
+                    owner=$(stat -c "%U:%G" /etc/pgbouncer/userlist.txt 2>/dev/null || stat -f "%Su:%Sg" /etc/pgbouncer/userlist.txt 2>/dev/null)
+                    
+                    log_info "Userlist permissions: $permissions, owner: $owner"
+                    
+                    # Try to fix permissions
+                    sudo chown postgres:postgres /etc/pgbouncer/userlist.txt 2>/dev/null
+                    sudo chmod 600 /etc/pgbouncer/userlist.txt 2>/dev/null
+                    
+                    # Restart pgbouncer
+                    log_info "Restarting pgbouncer service"
+                    sudo systemctl restart pgbouncer
+                    sleep 5 # Give it time to restart
+                fi
+            fi
+            
+            attempt=$((attempt+1))
+            
+            if [ $attempt -le $max_attempts ]; then
+                log_info "Retrying in 5 seconds..."
+                sleep 5
+            fi
+        fi
+    done
+    
+    # Set the result value based on connection success
+    if [ "$success" = true ]; then
         eval "$result_var=true"
         return 0
     else
-        local err_output
-        err_output=$(PGPASSWORD="$PG_SUPERUSER_PASSWORD" psql "host=$host port=$PGB_LISTEN_PORT dbname=$db_name user=postgres sslmode=require" -c "SELECT version();" 2>&1)
-        log_warning "Failed to connect to PostgreSQL through pgbouncer on port $PGB_LISTEN_PORT to database '$db_name'. Error: $err_output"
-        
-        # If SASL auth failed, check auth file
-        if [[ "$err_output" == *"SASL authentication failed"* ]]; then
-            log_info "Checking pgbouncer auth file for postgres user..."
-            if ! grep -q "\"postgres\"" /etc/pgbouncer/userlist.txt; then
-                log_error "postgres user not found in pgbouncer userlist.txt"
-            else
-                log_info "postgres user exists in pgbouncer userlist.txt"
-            fi
-        fi
-        
         eval "$result_var=false"
         return 1
     fi

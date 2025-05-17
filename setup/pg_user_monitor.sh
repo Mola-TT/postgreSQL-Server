@@ -36,28 +36,59 @@ generate_pgbouncer_userlist() {
     # Create temp userlist file
     local temp_userlist=$(mktemp)
     
-    # Get a list of all non-system users from PostgreSQL
-    local user_list
-    user_list=$(su - postgres -c "psql -t -c \"SELECT usename FROM pg_catalog.pg_user WHERE usename NOT IN ('postgres') AND usesysid >= 16384;\"" 2>/dev/null | tr -d ' ')
-    
-    # Always include postgres user first
+    # Always include postgres user first - try multiple methods to ensure it works
     log_info "Extracting password hash for user: postgres"
+    
+    # Method 1: Using extract_hash function (preferred)
     if ! extract_hash "postgres" "$temp_userlist"; then
-        log_error "Failed to extract hash for postgres user - this is critical"
-        # Try a more direct approach for postgres user
-        su - postgres -c "psql -t -c \"SELECT '\\\"postgres\\\" \\\"' || rolpassword || '\\\"' FROM pg_authid WHERE rolname='postgres';\"" 2>/dev/null | grep -v "^$" >> "$temp_userlist"
+        log_warn "Failed to extract hash for postgres user using extract_hash function"
+        
+        # Method 2: Direct query with proper quoting
+        log_info "Trying direct SQL query method for postgres user"
+        if ! su - postgres -c "psql -t -c \"SELECT '\\\"postgres\\\" \\\"' || rolpassword || '\\\"' FROM pg_authid WHERE rolname='postgres';\"" 2>/dev/null | grep -v "^$" >> "$temp_userlist"; then
+            log_warn "Direct SQL query method failed"
+            
+            # Method 3: Most direct approach with minimal quoting issues
+            log_info "Trying most direct approach for postgres user"
+            su - postgres -c "psql -t -c \"SELECT '\"postgres\" \"' || rolpassword || '\"' FROM pg_authid WHERE rolname='postgres';\"" 2>/dev/null | grep -v "^$" >> "$temp_userlist"
+        fi
     fi
     
     # Verify postgres user was added
     if ! grep -q "\"postgres\"" "$temp_userlist"; then
         log_error "Critical error: Failed to add postgres user to userlist"
+        log_info "Creating last-resort entry for postgres"
+        
+        # Last resort: If we can get the password hash any way possible
+        local postgres_hash
+        postgres_hash=$(su - postgres -c "psql -t -c \"SELECT rolpassword FROM pg_authid WHERE rolname='postgres';\"" 2>/dev/null | tr -d ' ')
+        
+        if [ -n "$postgres_hash" ]; then
+            echo "\"postgres\" \"$postgres_hash\"" >> "$temp_userlist"
+            log_info "Added postgres user with direct hash extraction"
+        else
+            log_error "Could not extract postgres password hash using any method"
+        fi
+    else
+        log_info "Successfully added postgres user to pgbouncer userlist"
     fi
+    
+    # Get a list of all non-system users from PostgreSQL
+    local user_list
+    user_list=$(su - postgres -c "psql -t -c \"SELECT usename FROM pg_catalog.pg_user WHERE usename NOT IN ('postgres') AND usesysid >= 16384;\"" 2>/dev/null | tr -d ' ')
     
     # Add each user to the userlist
     if [ -n "$user_list" ]; then
         for user in $user_list; do
             log_info "Adding user $user to pgbouncer userlist"
-            extract_hash "$user" "$temp_userlist"
+            
+            if ! extract_hash "$user" "$temp_userlist"; then
+                log_warn "Failed to extract hash for user $user using extract_hash function"
+                
+                # Try direct query method
+                log_info "Trying direct SQL query method for user $user"
+                su - postgres -c "psql -t -c \"SELECT '\\\"${user}\\\" \\\"' || rolpassword || '\\\"' FROM pg_authid WHERE rolname='${user}';\"" 2>/dev/null | grep -v "^$" >> "$temp_userlist"
+            fi
         done
     fi
     
@@ -67,6 +98,10 @@ generate_pgbouncer_userlist() {
         rm -f "$temp_userlist"
         return 1
     fi
+    
+    # Debug: output userlist content (without passwords)
+    log_info "Generated userlist contains these users:"
+    grep -o '"[^"]*"' "$temp_userlist" | grep -v "SCRAM-SHA-256" | sort | uniq | log_debug
     
     # Compare with existing userlist
     local changed=false
@@ -92,13 +127,18 @@ generate_pgbouncer_userlist() {
         
         if ! cp "$temp_userlist" "$PGB_USERLIST_PATH" 2>/dev/null; then
             log_error "Failed to update pgbouncer userlist at $PGB_USERLIST_PATH"
-            rm -f "$temp_userlist"
-            return 1
+            
+            # Try with sudo if direct copy fails
+            if ! sudo cp "$temp_userlist" "$PGB_USERLIST_PATH" 2>/dev/null; then
+                log_error "Failed to update pgbouncer userlist even with sudo"
+                rm -f "$temp_userlist"
+                return 1
+            fi
         fi
         
         # Set proper ownership and permissions
-        chown postgres:postgres "$PGB_USERLIST_PATH" 2>/dev/null
-        chmod 600 "$PGB_USERLIST_PATH" 2>/dev/null
+        chown postgres:postgres "$PGB_USERLIST_PATH" 2>/dev/null || sudo chown postgres:postgres "$PGB_USERLIST_PATH" 2>/dev/null
+        chmod 600 "$PGB_USERLIST_PATH" 2>/dev/null || sudo chmod 600 "$PGB_USERLIST_PATH" 2>/dev/null
         
         # Double check permissions
         log_info "Verifying userlist file permissions"
@@ -347,30 +387,58 @@ run_monitor_service() {
     # Initial userlist generation
     generate_pgbouncer_userlist
     
+    # Count consecutive failures to detect persistent issues
+    local consecutive_failures=0
+    local max_consecutive_failures=5
+    
     # Main monitoring loop
     while true; do
         # In limited functionality mode, update more frequently
         if [ "$triggers_installed" = false ]; then
+            log_info "Running in limited functionality mode - generating userlist"
             generate_pgbouncer_userlist
-            sleep 2  # Check more frequently in limited functionality mode
             
             # Test connection to ensure pgbouncer is working
             if ! PGPASSWORD="$PG_SUPERUSER_PASSWORD" psql "host=localhost port=$PGB_LISTEN_PORT dbname=postgres user=postgres sslmode=require" -c "SELECT 1;" &>/dev/null; then
-                log_warn "Connection to pgbouncer failed, checking auth file and restarting pgbouncer"
+                consecutive_failures=$((consecutive_failures+1))
+                log_warn "Connection to pgbouncer failed ($consecutive_failures/$max_consecutive_failures), checking auth file"
                 
                 # Verify userlist file exists and has proper permissions
                 if [ -f "$PGB_USERLIST_PATH" ]; then
-                    chown postgres:postgres "$PGB_USERLIST_PATH" 2>/dev/null
-                    chmod 600 "$PGB_USERLIST_PATH" 2>/dev/null
+                    # Check if postgres user exists in userlist
+                    if ! grep -q "\"postgres\"" "$PGB_USERLIST_PATH"; then
+                        log_error "postgres user not found in userlist, regenerating"
+                        generate_pgbouncer_userlist
+                    fi
                     
-                    # Force restart pgbouncer
-                    systemctl restart pgbouncer &>/dev/null
+                    # Fix permissions
+                    chown postgres:postgres "$PGB_USERLIST_PATH" 2>/dev/null || sudo chown postgres:postgres "$PGB_USERLIST_PATH" 2>/dev/null
+                    chmod 600 "$PGB_USERLIST_PATH" 2>/dev/null || sudo chmod 600 "$PGB_USERLIST_PATH" 2>/dev/null
+                    
+                    # Force restart pgbouncer if we've had multiple failures
+                    if [ $consecutive_failures -ge $max_consecutive_failures ]; then
+                        log_warn "$max_consecutive_failures consecutive connection failures, force restarting pgbouncer"
+                        systemctl restart pgbouncer &>/dev/null
+                        consecutive_failures=0
+                        
+                        # Wait for pgbouncer to restart
+                        sleep 5
+                    fi
                 else
                     log_error "Userlist file $PGB_USERLIST_PATH does not exist"
                     # Generate a new userlist
                     generate_pgbouncer_userlist
                 fi
+            else
+                # Reset failure counter if connection succeeds
+                if [ $consecutive_failures -gt 0 ]; then
+                    log_info "Connection to pgbouncer succeeded after $consecutive_failures failures"
+                    consecutive_failures=0
+                fi
             fi
+            
+            # Sleep for a short time in limited functionality mode
+            sleep 1  # Check very frequently in limited functionality mode
         else
             # Check the monitoring table for changes or run a direct check if needed
             check_user_changes
