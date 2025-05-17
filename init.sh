@@ -379,6 +379,55 @@ setup_backup_configuration() {
   return $result
 }
 
+# Setup PostgreSQL user monitor
+setup_pg_user_monitor() {
+  log_info "Setting up PostgreSQL user monitor..."
+  
+  # Find the pg_user_monitor script
+  local script_path=""
+  # Redirect find_script output to a variable to avoid log contamination
+  script_path=$(find_script "pg_user_monitor.sh" 2>/dev/null)
+  local find_result=$?
+  
+  # Verify the result
+  if [ $find_result -ne 0 ] || [ -z "$script_path" ]; then
+    log_error "Could not find pg_user_monitor.sh"
+    return 1
+  fi
+  
+  # Clean up any potential logging in the path (defensive measure)
+  script_path=$(echo "$script_path" | grep -v '^\[' | tail -n 1)
+  
+  log_info "Using pg_user_monitor.sh at: $script_path"
+  
+  # Double-check that the file actually exists
+  if [ ! -f "$script_path" ]; then
+    log_error "Script path $script_path does not exist or is not a regular file"
+    return 1
+  fi
+  
+  if [ ! -r "$script_path" ]; then
+    log_error "Script path $script_path is not readable"
+    return 1
+  fi
+  
+  # Ensure the script is executable
+  chmod +x "$script_path" 2>/dev/null || log_warn "Failed to set executable permission, will use bash explicitly"
+  
+  log_info "Executing pg_user_monitor.sh..."
+  # Use bash explicitly to execute the script with proper quoting to handle spaces in path
+  bash "$script_path"
+  local result=$?
+  
+  if [ $result -eq 0 ]; then
+    log_info "PostgreSQL user monitor setup completed successfully"
+  else
+    log_error "PostgreSQL user monitor setup failed with exit code $result"
+  fi
+  
+  return $result
+}
+
 # Main function
 main() {
     display_banner
@@ -467,6 +516,18 @@ main() {
     # Setup backup configuration
     setup_backup_configuration
     
+    # Setup PostgreSQL user monitor (Milestone 8)
+    local pg_user_monitor_success=false
+    if [ "${PG_USER_MONITOR_ENABLED:-true}" = true ]; then
+        if setup_pg_user_monitor; then
+            pg_user_monitor_success=true
+        else
+            log_error "PostgreSQL user monitor setup encountered issues, but continuing"
+        fi
+    else
+        log_info "PostgreSQL user monitor disabled (set PG_USER_MONITOR_ENABLED=true to enable)"
+    fi
+    
     # Print setup summary
     log_info "-----------------------------------------------"
     log_info "SETUP SUMMARY"
@@ -506,6 +567,12 @@ main() {
         log_info "✓ Hardware change detector setup: SUCCESS"
     else
         log_error "✗ Hardware change detector setup: FAILED"
+    fi
+    
+    if [ "$pg_user_monitor_success" = true ]; then
+        log_info "✓ PostgreSQL user monitor setup: SUCCESS"
+    else
+        log_error "✗ PostgreSQL user monitor setup: FAILED"
     fi
     
     log_info "-----------------------------------------------"

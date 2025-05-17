@@ -95,6 +95,7 @@ run_all_tests() {
         "$TEST_DIR/test_dynamic_optimization.sh"
         "$TEST_DIR/test_email_notification.sh"
         "$TEST_DIR/test_backup.sh"
+        "$TEST_DIR/test_pg_user_monitor.sh"
     )
     
     log_info "Preparing to run ${#ordered_tests[@]} tests"

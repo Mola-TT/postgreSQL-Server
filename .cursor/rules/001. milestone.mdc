@@ -5,7 +5,33 @@ alwaysApply: true
 ---
 # Milestone
 
-## Current Progress: Milestone 7 (Completed)
+## Current Progress: Milestone 8 (In Progress)
+
+## Milestone 8 (In Progress)
+- Created `pg_user_monitor.sh` under setup folder that:
+  - Automatically updates pgbouncer's userlist.txt when PostgreSQL users change
+  - Monitors user creation, deletion, and password changes
+  - Implements PostgreSQL triggers to detect user changes
+  - Creates a systemd service for continuous monitoring
+  - Provides real-time userlist updates with proper permissions
+  - Handles reload/restart of pgbouncer when userlist changes
+  - Includes configurable monitoring interval and logging options
+  - Implements efficient update detection to minimize unnecessary reloads
+- Created comprehensive test script (`test_pg_user_monitor.sh`) to validate:
+  - User creation detection and userlist updates
+  - Password change detection and userlist updates
+  - User deletion detection and userlist updates
+  - Service functionality and reliability
+  - Proper trigger installation and monitoring table setup
+- Updated environment configuration:
+  - Added PostgreSQL user monitor settings to default.env and user.env.template
+  - Added configuration for monitor interval, service name, and log path
+  - Provided option to enable/disable the user monitor functionality
+- Integrated with existing setup:
+  - Added setup_pg_user_monitor function to init.sh
+  - Updated installation status tracking in init.sh
+  - Added the monitor to the setup summary output
+  - Ensured proper dependencies on PostgreSQL and pgbouncer services
 
 ## Milestone 7 (Completed)
 - Created `backup_config.sh` under setup folder that:
