@@ -69,7 +69,7 @@ generate_pgbouncer_userlist() {
                     # Format the hash correctly for pgbouncer
                     local raw_hash=$(cat "/tmp/pg_hash_$$.tmp" | tr -d ' \n\r\t')
                     if [ -n "$raw_hash" ]; then
-                        echo "\"postgres\" \"$raw_hash\"" >> "$temp_userlist"
+                        echo "\"postgres\" \"$raw_hash\"" > "$temp_userlist"
                         if grep -q "\"postgres\"" "$temp_userlist"; then
                             postgres_hash_extracted=true
                             log_info "Successfully extracted postgres user hash via simplified approach"
@@ -99,7 +99,7 @@ generate_pgbouncer_userlist() {
                 # Format the hash correctly for pgbouncer
                 local raw_hash=$(cat "/tmp/pg_hash_$$.tmp" | tr -d ' \n\r\t')
                 if [ -n "$raw_hash" ]; then
-                    echo "\"postgres\" \"$raw_hash\"" >> "$temp_userlist"
+                    echo "\"postgres\" \"$raw_hash\"" > "$temp_userlist"
                     if grep -q "\"postgres\"" "$temp_userlist"; then
                         postgres_hash_extracted=true
                         log_info "Successfully extracted postgres user hash via password reset method"
@@ -111,6 +111,17 @@ generate_pgbouncer_userlist() {
         fi
     fi
     
+    # Method 5 (extreme emergency): Create MD5 hash from password if all else fails
+    if [ "$postgres_hash_extracted" = false ] && [ -n "$PG_SUPERUSER_PASSWORD" ]; then
+        hash_methods_tried=$((hash_methods_tried+1))
+        log_warn "EMERGENCY FALLBACK: Creating MD5 hash for postgres user"
+        # For testing or emergency recovery, use MD5 hash
+        local md5pass=$(echo -n "md5$(echo -n "${PG_SUPERUSER_PASSWORD}postgres" | md5sum | cut -d' ' -f1)")
+        echo "\"postgres\" \"$md5pass\"" > "$temp_userlist"
+        log_warn "Created emergency MD5 authentication entry for postgres (may not work with scram-sha-256)"
+        postgres_hash_extracted=true
+    fi
+    
     # Final verification for postgres user
     if ! grep -q "\"postgres\"" "$temp_userlist"; then
         log_error "CRITICAL ERROR: Failed to add postgres user to userlist after $hash_methods_tried methods"
@@ -120,7 +131,7 @@ generate_pgbouncer_userlist() {
         if [ -n "$PG_SUPERUSER_PASSWORD" ]; then
             # For testing or emergency recovery, use simple MD5
             log_warn "EMERGENCY FALLBACK: Creating basic auth entry for postgres"
-            md5pass=$(echo -n "md5$(echo -n "${PG_SUPERUSER_PASSWORD}postgres" | md5sum | cut -d' ' -f1)")
+            local md5pass=$(echo -n "md5$(echo -n "${PG_SUPERUSER_PASSWORD}postgres" | md5sum | cut -d' ' -f1)")
             echo "\"postgres\" \"$md5pass\"" > "$temp_userlist"
             log_warn "Created emergency authentication entry for postgres (may not work with scram-sha-256)"
         else
@@ -205,10 +216,9 @@ generate_pgbouncer_userlist() {
             fi
         fi
         
-        # Set proper ownership and permissions - this is critical for pgbouncer
-        chown postgres:postgres "$PGB_USERLIST_PATH" 2>/dev/null || sudo chown postgres:postgres "$PGB_USERLIST_PATH" 2>/dev/null
-        # Change to 600 (stricter permission) instead of 640
-        chmod 600 "$PGB_USERLIST_PATH" 2>/dev/null || sudo chmod 600 "$PGB_USERLIST_PATH" 2>/dev/null
+        # ALWAYS set proper ownership and permissions - this is critical for pgbouncer
+        sudo chown postgres:postgres "$PGB_USERLIST_PATH" 2>/dev/null || chown postgres:postgres "$PGB_USERLIST_PATH" 2>/dev/null
+        sudo chmod 600 "$PGB_USERLIST_PATH" 2>/dev/null || chmod 600 "$PGB_USERLIST_PATH" 2>/dev/null
         
         # Double check permissions
         log_info "Verifying userlist file permissions"
@@ -490,8 +500,8 @@ run_monitor_service() {
                     # Fix permissions if needed
                     if [ "$owner" != "postgres:postgres" ] || [ "$permissions" != "600" ]; then
                         log_warn "Incorrect permissions or ownership, fixing"
-                        chown postgres:postgres "$PGB_USERLIST_PATH" 2>/dev/null || sudo chown postgres:postgres "$PGB_USERLIST_PATH" 2>/dev/null
-                        chmod 600 "$PGB_USERLIST_PATH" 2>/dev/null || sudo chmod 600 "$PGB_USERLIST_PATH" 2>/dev/null
+                        sudo chown postgres:postgres "$PGB_USERLIST_PATH" 2>/dev/null || chown postgres:postgres "$PGB_USERLIST_PATH" 2>/dev/null
+                        sudo chmod 600 "$PGB_USERLIST_PATH" 2>/dev/null || chmod 600 "$PGB_USERLIST_PATH" 2>/dev/null
                     fi
                 else
                     log_error "$PGB_USERLIST_PATH does not exist"

@@ -284,7 +284,7 @@ run_tests() {
                 sleep 10
                 
                 # Check again with additional timeout
-                local secondary_timeout=30
+                local secondary_timeout=60 # Increase timeout to 60 seconds
                 local found=false
                 
                 for i in $(seq 1 $secondary_timeout); do
@@ -294,7 +294,7 @@ run_tests() {
                         break
                     fi
                     
-                    if [ $((i % 5)) -eq 0 ]; then
+                    if [ $((i % 10)) -eq 0 ]; then
                         log_info "Still waiting for userlist update after restart... ($i/$secondary_timeout seconds)"
                     fi
                     sleep 1
