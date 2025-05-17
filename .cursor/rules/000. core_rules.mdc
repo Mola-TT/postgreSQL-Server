@@ -17,12 +17,23 @@ This project contains Ubuntu scripts for initializing a PostgreSQL server. The s
 - **Single Source of Truth** – All configuration and setup logic in main initialization scripts
 - **NO HOTFIXES** – All fixes must be implemented directly in the main scripts
 
+### Version Control Practices
+- **Logical Commits** – Group related changes into meaningful commits
+- **Commit After Each Feature** – Commit changes immediately after completing a logical feature or fix
+- **Descriptive Commit Messages** – Use clear, concise messages describing what was changed and why
+- **Small, Focused Changes** – Keep commits small and focused on a single task or fix
+- **Push Regularly** – Push commits to remote repository after significant work
+
 ### ❌ What NOT to Do
 - **NEVER create separate hotfix scripts**  
   - Avoid patching issues with temporary fixes
   - Keep the initialization script as the single source of truth
   - Do not create workarounds outside the main scripts
   - Do not implement temporary solutions with the intention to "fix properly later"
+- **NEVER accumulate large changes without committing**
+  - Do not make multiple unrelated changes in a single commit
+  - Do not delay commits until the end of development sessions
+  - Do not use vague commit messages like "fixed stuff" or "updates"
 
 ### ✅ What to Do Instead
 1. **Fix initialization scripts directly**  
@@ -30,16 +41,24 @@ This project contains Ubuntu scripts for initializing a PostgreSQL server. The s
    - Ensure fixes integrate smoothly into the existing setup process
    - All fixes must be permanent solutions implemented in the original scripts
    - Document any significant changes within the script comments
+2. **Commit changes properly**
+   - Create logical commits that encapsulate related changes
+   - Write meaningful commit messages describing what and why
+   - Push commits to remote repository after completing a significant task
+   - Review changes before committing to ensure code quality
 
 ### 🎯 Project Goals
 - Maintain a **clean and maintainable** setup process
 - Ensure **consistent deployments** without scattered fixes
 - Keep scripts **self-sufficient and reliable**
 - **Zero tolerance** for temporary hotfixes or workarounds
+- Maintain a **clear and traceable** development history
 
 ### Development Workflow
 1. Identify issues or improvements needed
 2. Modify main script files directly - NEVER create separate fix scripts
 3. Test changes thoroughly on Windows
 4. Ensure line endings are properly handled for Ubuntu deployment
-5. Generate code according to the current milestone stated in `001.milestone.mdc` and minimize modifications that affect other milestones 
+5. Commit logical changes with descriptive messages
+6. Push commits to remote repository
+7. Generate code according to the current milestone stated in `001.milestone.mdc` and minimize modifications that affect other milestones 
