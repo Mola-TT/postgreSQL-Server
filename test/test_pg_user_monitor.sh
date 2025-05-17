@@ -14,6 +14,11 @@ TEST_DIR="$SCRIPT_DIR/test"
 # Source the logger
 source "$SCRIPT_DIR/lib/logger.sh"
 
+# Add missing log_warning function
+log_warning() {
+    log_warn "$1"
+}
+
 # Load default environment variables
 source "$SCRIPT_DIR/conf/default.env"
 

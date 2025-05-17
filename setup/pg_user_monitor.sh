@@ -334,7 +334,7 @@ run_monitor_service() {
         # In limited functionality mode, update more frequently
         if [ "$triggers_installed" = false ]; then
             generate_pgbouncer_userlist
-            sleep 5  # Check more frequently in limited functionality mode
+            sleep 2  # Check more frequently in limited functionality mode
         else
             # Check the monitoring table for changes or run a direct check if needed
             check_user_changes
