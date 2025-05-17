@@ -58,4 +58,7 @@ node_modules/
 .Spotlight-V100
 .Trashes
 ehthumbs.db
-Thumbs.db 
+Thumbs.db
+
+# Add conf/user.env to gitignore
+conf/user.env 
