@@ -22,6 +22,11 @@ if [ -f "$SCRIPT_DIR/conf/user.env" ]; then
     source "$SCRIPT_DIR/conf/user.env"
 fi
 
+# Add the log_warning function (missing in the code)
+log_warning() {
+    log "WARNING" "$1"
+}
+
 # Status indicators with logger
 log_status_pass() {
     log_info "✓ PASS: $1"

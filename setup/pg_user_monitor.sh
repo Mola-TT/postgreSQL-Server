@@ -328,10 +328,16 @@ run_monitor_service() {
     # Initial userlist generation
     generate_pgbouncer_userlist
     
+    # Use different monitoring intervals depending on mode
+    local limited_mode_interval=$((PG_USER_MONITOR_INTERVAL / 3))
+    if [ $limited_mode_interval -lt 10 ]; then
+        limited_mode_interval=10  # Minimum 10 seconds
+    fi
+    
     # Main monitoring loop
     while true; do
-        # Try to install triggers again if needed
-        if [ "$triggers_installed" = false ]; then
+        # Try to install triggers again if needed (but less frequently)
+        if [ "$triggers_installed" = false ] && [ $((RANDOM % 10)) -eq 0 ]; then
             log_info "Attempting to install triggers again..."
             if install_pg_triggers; then
                 triggers_installed=true
@@ -342,13 +348,14 @@ run_monitor_service() {
         # Check for user changes - only try to use trigger-based detection if triggers are installed
         if [ "$triggers_installed" = true ]; then
             check_user_changes
+            sleep "$PG_USER_MONITOR_INTERVAL"
         else
             # Fallback to direct userlist generation when triggers aren't available
+            # In limited functionality mode, check more frequently
             log_info "Using direct userlist generation (triggers not available)"
             generate_pgbouncer_userlist
+            sleep "$limited_mode_interval"
         fi
-        
-        sleep "$PG_USER_MONITOR_INTERVAL"
     done
 }
 
