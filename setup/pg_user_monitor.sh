@@ -439,6 +439,7 @@ Wants=pgbouncer.service
 Type=simple
 User=root
 Group=root
+ExecStartPre=/bin/bash -c 'mkdir -p $(dirname $PG_USER_MONITOR_LOG_PATH) && touch $PG_USER_MONITOR_LOG_PATH'
 ExecStart=/bin/bash $script_path --daemon
 Restart=always
 RestartSec=10
@@ -536,7 +537,17 @@ initial_userlist_sync() {
   
   # Get current user state
   if get_current_user_state "$temp_state_file"; then
-    # Create a fake "all users added" changes file
+    # Read existing userlist to preserve current entries
+    existing_users=()
+    if [ -f "$PGB_USERLIST_PATH" ]; then
+      while IFS= read -r line; do
+        if [[ "$line" =~ ^\"([^\"]+)\" ]]; then
+          existing_users+=("${BASH_REMATCH[1]}")
+        fi
+      done < "$PGB_USERLIST_PATH"
+    fi
+    
+    # Create a changes file that only adds users not already in userlist
     python3 -c "
 import json
 import sys
@@ -548,8 +559,17 @@ try:
     if users is None:
         users = []
     
+    # Get existing users from bash array
+    existing_users = '${existing_users[@]}'.split() if '${existing_users[@]}' else []
+    
+    # Only add users that are not already in the userlist
+    new_users = []
+    for user in users:
+        if user['can_login'] and user['password_hash'] and user['username'] not in existing_users:
+            new_users.append(user)
+    
     changes = {
-        'added': [user for user in users if user['can_login'] and user['password_hash']],
+        'added': new_users,
         'modified': [],
         'deleted': []
     }
@@ -617,6 +637,11 @@ setup_pg_user_monitor() {
   # Create log directory
   local log_dir=$(dirname "$PG_USER_MONITOR_LOG_PATH")
   mkdir -p "$log_dir" 2>/dev/null
+  
+  # Create log file with proper permissions
+  touch "$PG_USER_MONITOR_LOG_PATH" 2>/dev/null
+  chown root:root "$PG_USER_MONITOR_LOG_PATH" 2>/dev/null
+  chmod 644 "$PG_USER_MONITOR_LOG_PATH" 2>/dev/null
   
   # Perform initial userlist sync
   if ! initial_userlist_sync; then
