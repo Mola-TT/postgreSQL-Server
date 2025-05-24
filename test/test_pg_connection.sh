@@ -349,18 +349,18 @@ test_temp_user_connection() {
             "" \
             "Failed to update temporary user password"
             
-        # Use the extract_hash function if available
-        if type extract_hash &>/dev/null; then
-            # Create a temporary file for the hash
-            temp_hash_file=$(mktemp)
+        # Use the extract_password_hash function from pg_extract_hash.sh
+        if type extract_password_hash &>/dev/null; then
+            log_info "Extracting password hash for user: $temp_user"
+            log_info "Using authentication type: $auth_type"
             
             # Extract the hash for the temp user
-            if extract_hash "$temp_user" "$temp_hash_file"; then
+            if extract_password_hash "$temp_user" "/tmp/temp_user_hash.txt"; then
                 # Append the hash to pgbouncer's userlist.txt
-                execute_silently "cat $temp_hash_file | sudo tee -a /etc/pgbouncer/userlist.txt > /dev/null" \
+                execute_silently "cat /tmp/temp_user_hash.txt | sudo tee -a /etc/pgbouncer/userlist.txt > /dev/null" \
                     "" \
                     "Failed to append hash to pgbouncer authentication file"
-                rm -f "$temp_hash_file"
+                rm -f "/tmp/temp_user_hash.txt"
                 
                 # Fix file ownership and permissions after modification
                 execute_silently "sudo chown postgres:postgres /etc/pgbouncer/userlist.txt" "" "Failed to fix ownership"
@@ -377,7 +377,7 @@ test_temp_user_connection() {
                 execute_silently "sudo chmod 600 /etc/pgbouncer/userlist.txt" "" "Failed to fix permissions"
             fi
         else
-            # Direct extraction and append if extract_hash function is not available
+            # Direct extraction and append if extract_password_hash function is not available
             execute_silently "su - postgres -c \"psql -t -c \\\"SELECT '\\\\\\\"$temp_user\\\\\\\" \\\\\\\"' || rolpassword || '\\\\\\\"' FROM pg_authid WHERE rolname='$temp_user'\\\" | sudo tee -a /etc/pgbouncer/userlist.txt > /dev/null\"" \
                 "" \
                 "Failed to add temporary user to pgbouncer authentication file"
@@ -393,8 +393,8 @@ test_temp_user_connection() {
         "Reloaded pgbouncer with temporary user" \
         "Failed to reload pgbouncer"
     
-    # Wait for pgbouncer to fully reload
-    sleep 3
+    # Wait for pgbouncer to fully reload and process userlist changes
+    sleep 5
     
     # Try connecting directly to PostgreSQL with the temporary user
     if output=$(PGPASSWORD="$temp_password" psql -h localhost -p "${DB_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t 2>/dev/null); then

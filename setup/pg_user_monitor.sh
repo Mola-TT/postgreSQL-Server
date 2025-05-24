@@ -453,6 +453,12 @@ create_systemd_service() {
   
   log_info "Creating systemd service: $service_name"
   
+  # Ensure log directory and file exist before creating service
+  local log_dir=$(dirname "$PG_USER_MONITOR_LOG_PATH")
+  mkdir -p "$log_dir" 2>/dev/null
+  touch "$PG_USER_MONITOR_LOG_PATH" 2>/dev/null
+  chmod 644 "$PG_USER_MONITOR_LOG_PATH" 2>/dev/null
+  
   # Create service file
   cat > "$service_file" << EOF
 [Unit]
@@ -465,7 +471,6 @@ Wants=pgbouncer.service
 Type=simple
 User=root
 Group=root
-ExecStartPre=/bin/bash -c 'mkdir -p "$(dirname "$PG_USER_MONITOR_LOG_PATH")" && touch "$PG_USER_MONITOR_LOG_PATH"'
 ExecStart=/bin/bash $script_path --daemon
 Restart=always
 RestartSec=10
