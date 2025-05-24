@@ -87,7 +87,16 @@ run_all_tests() {
     # Check if test scripts exist and are executable
     check_test_scripts
     
-        # Explicit test order    local ordered_tests=(        "$TEST_DIR/test_pg_connection.sh"        "$TEST_DIR/test_netdata.sh"        "$TEST_DIR/test_ssl_renewal.sh"        "$TEST_DIR/test_dynamic_optimization.sh"        "$TEST_DIR/test_email_notification.sh"        "$TEST_DIR/test_backup.sh"        "$TEST_DIR/test_pg_user_monitor.sh"    )
+    # Explicit test order
+    local ordered_tests=(
+        "$TEST_DIR/test_pg_connection.sh"
+        "$TEST_DIR/test_netdata.sh"
+        "$TEST_DIR/test_ssl_renewal.sh"
+        "$TEST_DIR/test_dynamic_optimization.sh"
+        "$TEST_DIR/test_email_notification.sh"
+        "$TEST_DIR/test_backup.sh"
+        "$TEST_DIR/test_pg_user_monitor.sh"
+    )
     
     log_info "Preparing to run ${#ordered_tests[@]} tests"
     

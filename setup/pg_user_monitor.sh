@@ -26,6 +26,27 @@ PG_USER_MONITOR_STATE_FILE="${PG_USER_MONITOR_STATE_FILE:-/var/lib/postgresql/us
 get_current_user_state() {
   local state_file="$1"
   local temp_file=$(mktemp)
+  local max_retries=5
+  local retry_delay=2
+  local retry_count=0
+  
+  # Test PostgreSQL connection first
+  while [ $retry_count -lt $max_retries ]; do
+    # Try a simple connection test
+    if su - postgres -c "psql -c 'SELECT 1;'" >/dev/null 2>&1; then
+      break
+    fi
+    
+    retry_count=$((retry_count + 1))
+    if [ $retry_count -lt $max_retries ]; then
+      log_info "PostgreSQL not ready, retrying in ${retry_delay}s (attempt $retry_count/$max_retries)..."
+      sleep $retry_delay
+    else
+      log_error "PostgreSQL connection failed after $max_retries attempts"
+      rm -f "$temp_file"
+      return 1
+    fi
+  done
   
   # Query PostgreSQL for all users with their password hashes and modification times
   su - postgres -c "psql -t -c \"
@@ -54,6 +75,7 @@ get_current_user_state() {
     rm -f "$temp_file"
     return 0
   else
+    log_error "Failed to query PostgreSQL user data"
     rm -f "$temp_file"
     return 1
   fi
@@ -569,7 +591,4 @@ case "${1:-setup}" in
     ;;
 esac
 
-# If script is run directly with setup, execute setup
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]] && [ "${1:-setup}" = "setup" ]; then
-  setup_pg_user_monitor
-fi 
+# Note: setup_pg_user_monitor is called via the case statement above 
