@@ -393,6 +393,9 @@ test_temp_user_connection() {
         "Reloaded pgbouncer with temporary user" \
         "Failed to reload pgbouncer"
     
+    # Wait for pgbouncer to fully reload
+    sleep 3
+    
     # Try connecting directly to PostgreSQL with the temporary user
     if output=$(PGPASSWORD="$temp_password" psql -h localhost -p "${DB_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t 2>/dev/null); then
         if [[ "$output" == *"temp_user_connected"* ]]; then
