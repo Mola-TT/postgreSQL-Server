@@ -5,6 +5,19 @@
 # Script directory
 PG_USER_MONITOR_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Load environment variables if not already loaded
+if [ -z "$PG_USER_MONITOR_ENABLED" ]; then
+  # Load default environment
+  if [ -f "$PG_USER_MONITOR_SCRIPT_DIR/../conf/default.env" ]; then
+    source "$PG_USER_MONITOR_SCRIPT_DIR/../conf/default.env"
+  fi
+  
+  # Load user environment if available
+  if [ -f "$PG_USER_MONITOR_SCRIPT_DIR/../conf/user.env" ]; then
+    source "$PG_USER_MONITOR_SCRIPT_DIR/../conf/user.env"
+  fi
+fi
+
 # Source required libraries
 if ! type log_info &>/dev/null; then
   source "$PG_USER_MONITOR_SCRIPT_DIR/../lib/logger.sh"
@@ -30,6 +43,11 @@ get_current_user_state() {
   local retry_delay=2
   local retry_count=0
   
+  # Ensure state file directory exists
+  local state_dir=$(dirname "$state_file")
+  mkdir -p "$state_dir" 2>/dev/null
+  chown postgres:postgres "$state_dir" 2>/dev/null
+  
   # Test PostgreSQL connection first
   while [ $retry_count -lt $max_retries ]; do
     # Try a simple connection test
@@ -48,7 +66,15 @@ get_current_user_state() {
     fi
   done
   
+  # Test access to pg_authid table
+  if ! su - postgres -c "psql -c 'SELECT COUNT(*) FROM pg_authid;'" >/dev/null 2>&1; then
+    log_error "Cannot access pg_authid table - insufficient privileges"
+    rm -f "$temp_file"
+    return 1
+  fi
+  
   # Query PostgreSQL for all users with their password hashes and modification times
+  # Try JSON aggregation first
   su - postgres -c "psql -t -c \"
     SELECT 
       json_agg(
@@ -57,26 +83,77 @@ get_current_user_state() {
           'password_hash', COALESCE(rolpassword, ''),
           'can_login', rolcanlogin,
           'valid_until', COALESCE(rolvaliduntil::text, ''),
-          'last_modified', EXTRACT(EPOCH FROM GREATEST(
-            COALESCE((SELECT max(xact_start) FROM pg_stat_activity WHERE usename = rolname), '1970-01-01'::timestamp),
-            '1970-01-01'::timestamp
-          ))
+          'last_modified', EXTRACT(EPOCH FROM NOW())
         )
       )
     FROM pg_authid 
     WHERE rolname NOT LIKE 'pg_%' 
     AND rolname != 'postgres_exporter'
     ORDER BY rolname;
-  \"" 2>/dev/null > "$temp_file"
+  \"" 2>"$temp_file.err" > "$temp_file"
+  
+  # If JSON aggregation failed, try a simpler approach
+  if [ $? -ne 0 ] || [ ! -s "$temp_file" ]; then
+    log_info "JSON aggregation failed, trying simpler query..."
+    su - postgres -c "psql -t -c \"
+      SELECT rolname, COALESCE(rolpassword, ''), rolcanlogin, COALESCE(rolvaliduntil::text, '')
+      FROM pg_authid 
+      WHERE rolname NOT LIKE 'pg_%' 
+      AND rolname != 'postgres_exporter'
+      ORDER BY rolname;
+    \"" 2>"$temp_file.err" > "$temp_file.raw"
+    
+    # Convert to JSON format using Python
+    python3 -c "
+import sys
+import json
+
+users = []
+try:
+    with open('$temp_file.raw', 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line and '|' in line:
+                parts = [p.strip() for p in line.split('|')]
+                if len(parts) >= 4:
+                    users.append({
+                        'username': parts[0],
+                        'password_hash': parts[1],
+                        'can_login': parts[2].lower() == 't',
+                        'valid_until': parts[3],
+                        'last_modified': 0
+                    })
+    
+    with open('$temp_file', 'w') as f:
+        json.dump(users, f)
+    
+    sys.exit(0)
+except Exception as e:
+    print(f'Error converting to JSON: {e}', file=sys.stderr)
+    sys.exit(1)
+" 2>>"$temp_file.err"
+    
+    rm -f "$temp_file.raw"
+  fi
   
   if [ $? -eq 0 ] && [ -s "$temp_file" ]; then
     # Clean up the JSON output and save to state file
     cat "$temp_file" | tr -d '\n\r\t ' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' > "$state_file"
-    rm -f "$temp_file"
+    log_info "Successfully retrieved user state data ($(wc -c < "$temp_file") bytes)"
+    rm -f "$temp_file" "$temp_file.err"
     return 0
   else
     log_error "Failed to query PostgreSQL user data"
-    rm -f "$temp_file"
+    if [ -f "$temp_file.err" ] && [ -s "$temp_file.err" ]; then
+      log_error "PostgreSQL error: $(cat "$temp_file.err")"
+    fi
+    if [ -f "$temp_file" ]; then
+      log_error "Query output size: $(wc -c < "$temp_file") bytes"
+      if [ -s "$temp_file" ]; then
+        log_error "Query output content: $(head -c 200 "$temp_file")"
+      fi
+    fi
+    rm -f "$temp_file" "$temp_file.err"
     return 1
   fi
 }
@@ -542,7 +619,10 @@ setup_pg_user_monitor() {
   mkdir -p "$log_dir" 2>/dev/null
   
   # Perform initial userlist sync
-  initial_userlist_sync
+  if ! initial_userlist_sync; then
+    log_error "Initial userlist sync failed, PostgreSQL user monitor setup aborted"
+    return 1
+  fi
   
   # Create systemd service
   create_systemd_service
