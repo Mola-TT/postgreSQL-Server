@@ -138,8 +138,24 @@ except Exception as e:
   
   if [ $? -eq 0 ] && [ -s "$temp_file" ]; then
     # Clean up the JSON output and save to state file
-    cat "$temp_file" | tr -d '\n\r\t ' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' > "$state_file"
-    log_info "Successfully retrieved user state data ($(wc -c < "$temp_file") bytes)"
+    # First check if the content is valid JSON
+    if python3 -c "import json; json.load(open('$temp_file'))" 2>/dev/null; then
+      cp "$temp_file" "$state_file"
+      log_info "Successfully retrieved user state data ($(wc -c < "$temp_file") bytes)"
+    else
+      log_error "Retrieved data is not valid JSON, attempting to fix..."
+      # Try to clean up the JSON
+      cat "$temp_file" | tr -d '\n\r\t ' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' > "$state_file"
+      # Verify the cleaned JSON
+      if python3 -c "import json; json.load(open('$state_file'))" 2>/dev/null; then
+        log_info "Successfully cleaned and saved user state data"
+      else
+        log_error "Failed to create valid JSON from retrieved data"
+        log_error "Raw data: $(head -c 200 "$temp_file")"
+        rm -f "$temp_file" "$temp_file.err"
+        return 1
+      fi
+    fi
     rm -f "$temp_file" "$temp_file.err"
     return 0
   else
@@ -530,6 +546,7 @@ initial_userlist_sync() {
   local state_file="$PG_USER_MONITOR_STATE_FILE"
   local state_dir=$(dirname "$state_file")
   local temp_state_file="${state_file}.initial"
+  local existing_users_file="${state_file}.existing"
   
   # Ensure state directory exists
   mkdir -p "$state_dir" 2>/dev/null
@@ -537,36 +554,48 @@ initial_userlist_sync() {
   
   # Get current user state
   if get_current_user_state "$temp_state_file"; then
-    # Read existing userlist to preserve current entries
-    existing_users=()
+    # Read existing userlist to preserve current entries and write to temp file
+    > "$existing_users_file"  # Create empty file
     if [ -f "$PGB_USERLIST_PATH" ]; then
       while IFS= read -r line; do
         if [[ "$line" =~ ^\"([^\"]+)\" ]]; then
-          existing_users+=("${BASH_REMATCH[1]}")
+          echo "${BASH_REMATCH[1]}" >> "$existing_users_file"
         fi
       done < "$PGB_USERLIST_PATH"
     fi
+    
+    log_info "Found $(wc -l < "$existing_users_file") existing users in userlist"
     
     # Create a changes file that only adds users not already in userlist
     python3 -c "
 import json
 import sys
+import os
 
 try:
+    # Read current users from PostgreSQL
     with open('$temp_state_file', 'r') as f:
         users = json.load(f)
     
     if users is None:
         users = []
     
-    # Get existing users from bash array
-    existing_users = '${existing_users[@]}'.split() if '${existing_users[@]}' else []
+    print(f'Found {len(users)} users from PostgreSQL', file=sys.stderr)
+    
+    # Read existing users from file
+    existing_users = []
+    if os.path.exists('$existing_users_file'):
+        with open('$existing_users_file', 'r') as f:
+            existing_users = [line.strip() for line in f if line.strip()]
+    
+    print(f'Found {len(existing_users)} existing users in userlist', file=sys.stderr)
     
     # Only add users that are not already in the userlist
     new_users = []
     for user in users:
-        if user['can_login'] and user['password_hash'] and user['username'] not in existing_users:
+        if user.get('can_login', False) and user.get('password_hash', '') and user.get('username', '') not in existing_users:
             new_users.append(user)
+            print(f'Will add new user: {user.get(\"username\", \"unknown\")}', file=sys.stderr)
     
     changes = {
         'added': new_users,
@@ -574,17 +603,25 @@ try:
         'deleted': []
     }
     
+    print(f'Creating changes file with {len(new_users)} new users', file=sys.stderr)
+    
     with open('${temp_state_file}.changes', 'w') as f:
         json.dump(changes, f, indent=2)
     
+    print('Changes file created successfully', file=sys.stderr)
     sys.exit(0)
     
 except Exception as e:
     print(f'Error creating initial changes: {e}', file=sys.stderr)
+    import traceback
+    traceback.print_exc(file=sys.stderr)
     sys.exit(1)
-" 2>/dev/null
+"
 
-    if [ $? -eq 0 ]; then
+    local python_exit_code=$?
+    if [ $python_exit_code -eq 0 ]; then
+      log_info "Initial changes file created successfully"
+      
       # Update pgbouncer userlist
       if update_pgbouncer_userlist "${temp_state_file}.changes" "$PGB_USERLIST_PATH"; then
         log_info "Initial pgbouncer userlist created successfully"
@@ -595,22 +632,25 @@ except Exception as e:
         # Reload pgbouncer
         reload_pgbouncer
         
+        # Clean up temporary files
+        rm -f "${temp_state_file}.changes" "$existing_users_file" 2>/dev/null
+        
         return 0
       else
         log_error "Failed to create initial pgbouncer userlist"
+        rm -f "${temp_state_file}" "${temp_state_file}.changes" "$existing_users_file" 2>/dev/null
         return 1
       fi
     else
-      log_error "Failed to create initial changes file"
+      log_error "Failed to create initial changes file (Python exit code: $python_exit_code)"
+      rm -f "${temp_state_file}" "${temp_state_file}.changes" "$existing_users_file" 2>/dev/null
       return 1
     fi
   else
     log_error "Failed to get initial user state from PostgreSQL"
+    rm -f "$existing_users_file" 2>/dev/null
     return 1
   fi
-  
-  # Clean up temporary files
-  rm -f "${temp_state_file}" "${temp_state_file}.changes" 2>/dev/null
 }
 
 # Main setup function
