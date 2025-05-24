@@ -330,7 +330,109 @@ setup_hardware_change_detection() {
   return $hw_detector_result
 }
 
-# Setup backup configurationsetup_backup_configuration() {  log_info "Setting up PostgreSQL backup configuration..."    # Find the backup configuration script  local script_path=""  # Redirect find_script output to a variable to avoid log contamination  script_path=$(find_script "backup_config.sh" 2>/dev/null)  local find_result=$?    # Verify the result  if [ $find_result -ne 0 ] || [ -z "$script_path" ]; then    log_error "Could not find backup_config.sh"    return 1  fi    # Clean up any potential logging in the path (defensive measure)  script_path=$(echo "$script_path" | grep -v '^\[' | tail -n 1)    log_info "Using backup_config.sh at: $script_path"    # Double-check that the file actually exists  if [ ! -f "$script_path" ]; then    log_error "Script path $script_path does not exist or is not a regular file"    return 1  fi    if [ ! -r "$script_path" ]; then    log_error "Script path $script_path is not readable"    return 1  fi    # Ensure the script is executable  chmod +x "$script_path" 2>/dev/null || log_warn "Failed to set executable permission, will use bash explicitly"    log_info "Executing backup_config.sh..."  # Use bash explicitly to execute the script with proper quoting to handle spaces in path  bash "$script_path"  local result=$?    if [ $result -eq 0 ]; then    log_info "Backup configuration completed successfully"  else    log_error "Backup configuration failed with exit code $result"  fi    return $result}# Setup PostgreSQL user monitorsetup_pg_user_monitor() {  log_info "Setting up PostgreSQL user monitor..."    # Check if monitoring is enabled  if [ "${PG_USER_MONITOR_ENABLED:-true}" != "true" ]; then    log_info "PostgreSQL user monitor is disabled (PG_USER_MONITOR_ENABLED != true)"    return 0  fi    # Find the PostgreSQL user monitor script  local script_path=""  # Redirect find_script output to a variable to avoid log contamination  script_path=$(find_script "pg_user_monitor.sh" 2>/dev/null)  local find_result=$?    # Verify the result  if [ $find_result -ne 0 ] || [ -z "$script_path" ]; then    log_error "Could not find pg_user_monitor.sh"    return 1  fi    # Clean up any potential logging in the path (defensive measure)  script_path=$(echo "$script_path" | grep -v '^\[' | tail -n 1)    log_info "Using pg_user_monitor.sh at: $script_path"    # Double-check that the file actually exists  if [ ! -f "$script_path" ]; then    log_error "Script path $script_path does not exist or is not a regular file"    return 1  fi    if [ ! -r "$script_path" ]; then    log_error "Script path $script_path is not readable"    return 1  fi    # Ensure the script is executable  chmod +x "$script_path" 2>/dev/null || log_warn "Failed to set executable permission, will use bash explicitly"    log_info "Executing pg_user_monitor.sh..."  # Use bash explicitly to execute the script with proper quoting to handle spaces in path  bash "$script_path" setup  local result=$?    if [ $result -eq 0 ]; then    log_info "PostgreSQL user monitor setup completed successfully"  else    log_error "PostgreSQL user monitor setup failed with exit code $result"  fi    return $result}
+# Setup backup configuration
+setup_backup_configuration() {
+  log_info "Setting up PostgreSQL backup configuration..."
+  
+  # Find the backup configuration script
+  local script_path=""
+  # Redirect find_script output to a variable to avoid log contamination
+  script_path=$(find_script "backup_config.sh" 2>/dev/null)
+  local find_result=$?
+  
+  # Verify the result
+  if [ $find_result -ne 0 ] || [ -z "$script_path" ]; then
+    log_error "Could not find backup_config.sh"
+    return 1
+  fi
+  
+  # Clean up any potential logging in the path (defensive measure)
+  script_path=$(echo "$script_path" | grep -v '^\[' | tail -n 1)
+  
+  log_info "Using backup_config.sh at: $script_path"
+  
+  # Double-check that the file actually exists
+  if [ ! -f "$script_path" ]; then
+    log_error "Script path $script_path does not exist or is not a regular file"
+    return 1
+  fi
+  
+  if [ ! -r "$script_path" ]; then
+    log_error "Script path $script_path is not readable"
+    return 1
+  fi
+  
+  # Ensure the script is executable
+  chmod +x "$script_path" 2>/dev/null || log_warn "Failed to set executable permission, will use bash explicitly"
+  
+  log_info "Executing backup_config.sh..."
+  # Use bash explicitly to execute the script with proper quoting to handle spaces in path
+  bash "$script_path"
+  local result=$?
+  
+  if [ $result -eq 0 ]; then
+    log_info "Backup configuration completed successfully"
+  else
+    log_error "Backup configuration failed with exit code $result"
+  fi
+  
+  return $result
+}
+
+# Setup PostgreSQL user monitor
+setup_pg_user_monitor() {
+  log_info "Setting up PostgreSQL user monitor..."
+  
+  # Check if monitoring is enabled
+  if [ "${PG_USER_MONITOR_ENABLED:-true}" != "true" ]; then
+    log_info "PostgreSQL user monitor is disabled (PG_USER_MONITOR_ENABLED != true)"
+    return 0
+  fi
+  
+  # Find the PostgreSQL user monitor script
+  local script_path=""
+  # Redirect find_script output to a variable to avoid log contamination
+  script_path=$(find_script "pg_user_monitor.sh" 2>/dev/null)
+  local find_result=$?
+  
+  # Verify the result
+  if [ $find_result -ne 0 ] || [ -z "$script_path" ]; then
+    log_error "Could not find pg_user_monitor.sh"
+    return 1
+  fi
+  
+  # Clean up any potential logging in the path (defensive measure)
+  script_path=$(echo "$script_path" | grep -v '^\[' | tail -n 1)
+  
+  log_info "Using pg_user_monitor.sh at: $script_path"
+  
+  # Double-check that the file actually exists
+  if [ ! -f "$script_path" ]; then
+    log_error "Script path $script_path does not exist or is not a regular file"
+    return 1
+  fi
+  
+  if [ ! -r "$script_path" ]; then
+    log_error "Script path $script_path is not readable"
+    return 1
+  fi
+  
+  # Ensure the script is executable
+  chmod +x "$script_path" 2>/dev/null || log_warn "Failed to set executable permission, will use bash explicitly"
+  
+  log_info "Executing pg_user_monitor.sh..."
+  # Use bash explicitly to execute the script with proper quoting to handle spaces in path
+  bash "$script_path" setup
+  local result=$?
+  
+  if [ $result -eq 0 ]; then
+    log_info "PostgreSQL user monitor setup completed successfully"
+  else
+    log_error "PostgreSQL user monitor setup failed with exit code $result"
+  fi
+  
+  return $result
+}
 
 # Main function
 main() {
@@ -339,7 +441,6 @@ main() {
     # Set timezone first
     set_timezone
     log_info "Set system timezone to ${SERVER_TIMEZONE:-UTC}"
-    
     
     # Load user environment variables if they exist (overrides defaults)
     if [ -f "$SCRIPT_DIR/conf/user.env" ]; then
@@ -361,7 +462,15 @@ main() {
     # Update system packages
     update_system
     
-        # Track installation status    local pg_success=false    local nginx_success=false    local netdata_success=false    local ssl_renewal_success=false    local dynamic_opt_success=false    local hw_detector_success=false    local backup_success=false    local pg_user_monitor_success=false
+    # Track installation status
+    local pg_success=false
+    local nginx_success=false
+    local netdata_success=false
+    local ssl_renewal_success=false
+    local dynamic_opt_success=false
+    local hw_detector_success=false
+    local backup_success=false
+    local pg_user_monitor_success=false
     
     # Setup PostgreSQL and pgbouncer
     log_info "Setting up PostgreSQL and pgbouncer..."
@@ -411,7 +520,23 @@ main() {
     # Setup hardware change detection
     setup_hardware_change_detection "hw_detector_success"
     
-        # Setup backup configuration    if setup_backup_configuration; then        backup_success=true    else        log_error "Backup configuration setup encountered issues, but continuing"    fi        # Setup PostgreSQL user monitor (only if PostgreSQL is running)    if [ "$pg_success" = true ] && command -v psql >/dev/null 2>&1; then        if setup_pg_user_monitor; then            pg_user_monitor_success=true        else            log_error "PostgreSQL user monitor setup encountered issues, but continuing"        fi    else        log_info "Skipping PostgreSQL user monitor setup (PostgreSQL not available)"    fi
+    # Setup backup configuration
+    if setup_backup_configuration; then
+        backup_success=true
+    else
+        log_error "Backup configuration setup encountered issues, but continuing"
+    fi
+    
+    # Setup PostgreSQL user monitor (only if PostgreSQL is running)
+    if [ "$pg_success" = true ] && command -v psql >/dev/null 2>&1; then
+        if setup_pg_user_monitor; then
+            pg_user_monitor_success=true
+        else
+            log_error "PostgreSQL user monitor setup encountered issues, but continuing"
+        fi
+    else
+        log_info "Skipping PostgreSQL user monitor setup (PostgreSQL not available)"
+    fi
     
     # Print setup summary
     log_info "-----------------------------------------------"
@@ -448,7 +573,25 @@ main() {
         log_error "✗ Dynamic optimization setup: FAILED"
     fi
     
-        if [ "$hw_detector_success" = true ]; then        log_info "✓ Hardware change detector setup: SUCCESS"    else        log_error "✗ Hardware change detector setup: FAILED"    fi        if [ "$backup_success" = true ]; then        log_info "✓ Backup configuration setup: SUCCESS"    else        log_error "✗ Backup configuration setup: FAILED"    fi        if [ "$pg_user_monitor_success" = true ]; then        log_info "✓ PostgreSQL user monitor setup: SUCCESS"    else        log_error "✗ PostgreSQL user monitor setup: FAILED"    fi        log_info "-----------------------------------------------"
+    if [ "$hw_detector_success" = true ]; then
+        log_info "✓ Hardware change detector setup: SUCCESS"
+    else
+        log_error "✗ Hardware change detector setup: FAILED"
+    fi
+    
+    if [ "$backup_success" = true ]; then
+        log_info "✓ Backup configuration setup: SUCCESS"
+    else
+        log_error "✗ Backup configuration setup: FAILED"
+    fi
+    
+    if [ "$pg_user_monitor_success" = true ]; then
+        log_info "✓ PostgreSQL user monitor setup: SUCCESS"
+    else
+        log_error "✗ PostgreSQL user monitor setup: FAILED"
+    fi
+    
+    log_info "-----------------------------------------------"
     
     log_info "Initialization COMPLETE"
     echo ""
