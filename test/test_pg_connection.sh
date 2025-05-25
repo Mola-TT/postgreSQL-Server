@@ -349,16 +349,17 @@ test_temp_user_connection() {
             "" \
             "Failed to update temporary user password"
             
-        # For temporary user testing, use a simpler approach
+        # Use the proper extract_password_hash function for consistency
         log_info "Extracting password hash for user: $temp_user"
         log_info "Using authentication type: $auth_type"
         
-        # Get the password hash using a simpler query
-        local password_hash=$(su - postgres -c "psql -t -c \"SELECT rolpassword FROM pg_authid WHERE rolname='$temp_user';\"" 2>/dev/null | tr -d ' \n\r\t')
+        # Create temporary file for hash extraction
+        local temp_hash_file="/tmp/temp_user_hash_$$.txt"
         
-        if [ -n "$password_hash" ]; then
-            # Add user to userlist with proper format
-            if execute_silently "echo \"\\\"$temp_user\\\" \\\"$password_hash\\\"\" | sudo tee -a /etc/pgbouncer/userlist.txt > /dev/null" \
+        # Use the extract_password_hash function from pg_extract_hash.sh
+        if extract_password_hash "$temp_user" "$auth_type" "$temp_hash_file" "$temp_password"; then
+            # Append the hash to pgbouncer's userlist.txt
+            if execute_silently "cat \"$temp_hash_file\" | sudo tee -a /etc/pgbouncer/userlist.txt > /dev/null" \
                 "Successfully added temporary user to pgbouncer authentication file" \
                 "Failed to add temporary user to pgbouncer authentication file"; then
                 
@@ -368,8 +369,13 @@ test_temp_user_connection() {
             else
                 log_warn "Failed to add temporary user to pgbouncer authentication file"
             fi
+            
+            # Clean up temporary hash file
+            rm -f "$temp_hash_file"
         else
-            log_warn "Failed to extract password hash for temporary user"
+            log_warn "Failed to extract password hash for temporary user using extract_password_hash function"
+            # Clean up temporary hash file
+            rm -f "$temp_hash_file"
         fi
     fi
     
