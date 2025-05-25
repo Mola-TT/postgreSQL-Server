@@ -359,6 +359,14 @@ test_temp_user_connection() {
             "" \
             "Failed to backup userlist file"
         
+        # Debug: Show current userlist before modification
+        log_info "Debug: Current userlist before modification:"
+        if [ -f "/etc/pgbouncer/userlist.txt" ]; then
+            sudo cat /etc/pgbouncer/userlist.txt | while IFS= read -r line; do
+                log_info "  $line"
+            done
+        fi
+        
         # Clean up any existing entries for this user first to prevent duplicates
         log_info "Debug: Cleaning up any existing entries for user: $temp_user"
         execute_silently "sudo sed -i '/\"'$temp_user'\"/d' /etc/pgbouncer/userlist.txt" \
@@ -380,27 +388,59 @@ test_temp_user_connection() {
             log_info "Debug: Raw password hash extracted: '$password_hash'"
             
             if [ -n "$password_hash" ] && [ "$password_hash" != "||rolpassword||" ] && [[ "$password_hash" == SCRAM-SHA-256* ]]; then
-                # Add user to userlist with proper format - use printf for better control
+                # Add user to userlist with proper format - create a new file to avoid corruption
                 log_info "Debug: Adding to userlist: \"$temp_user\" \"$password_hash\""
-                if printf '"%s" "%s"\n' "$temp_user" "$password_hash" | sudo tee -a /etc/pgbouncer/userlist.txt > /dev/null; then
+                
+                # Create a temporary file with the new userlist content
+                local temp_userlist=$(mktemp)
+                
+                # Copy existing content to temp file
+                sudo cat /etc/pgbouncer/userlist.txt > "$temp_userlist" 2>/dev/null || true
+                
+                # Add the new user entry
+                printf '"%s" "%s"\n' "$temp_user" "$password_hash" >> "$temp_userlist"
+                
+                # Replace the original file atomically
+                if sudo cp "$temp_userlist" /etc/pgbouncer/userlist.txt; then
                     log_info "Successfully added temporary user to pgbouncer authentication file"
                     
                     # Fix file ownership and permissions after modification
                     execute_silently "sudo chown postgres:postgres /etc/pgbouncer/userlist.txt" "" "Failed to fix ownership"
                     execute_silently "sudo chmod 600 /etc/pgbouncer/userlist.txt" "" "Failed to fix permissions"
+                    
+                    # Clean up temp file
+                    rm -f "$temp_userlist"
                 else
                     log_warn "Failed to add temporary user to pgbouncer authentication file"
+                    rm -f "$temp_userlist"
                 fi
             else
                 log_warn "Password hash extraction returned invalid result for user: $temp_user (got: '$password_hash')"
                 # For testing purposes, if SCRAM fails, try with plain text password
                 log_info "Debug: Trying plain text password for testing..."
-                if printf '"%s" "%s"\n' "$temp_user" "$temp_password" | sudo tee -a /etc/pgbouncer/userlist.txt > /dev/null; then
+                
+                # Create a temporary file with the new userlist content
+                local temp_userlist=$(mktemp)
+                
+                # Copy existing content to temp file
+                sudo cat /etc/pgbouncer/userlist.txt > "$temp_userlist" 2>/dev/null || true
+                
+                # Add the new user entry with plain text password
+                printf '"%s" "%s"\n' "$temp_user" "$temp_password" >> "$temp_userlist"
+                
+                # Replace the original file atomically
+                if sudo cp "$temp_userlist" /etc/pgbouncer/userlist.txt; then
                     log_info "Added temporary user with plain text password for testing"
                     
                     # Fix file ownership and permissions after modification
                     execute_silently "sudo chown postgres:postgres /etc/pgbouncer/userlist.txt" "" "Failed to fix ownership"
                     execute_silently "sudo chmod 600 /etc/pgbouncer/userlist.txt" "" "Failed to fix permissions"
+                    
+                    # Clean up temp file
+                    rm -f "$temp_userlist"
+                else
+                    log_warn "Failed to add temporary user with plain text password"
+                    rm -f "$temp_userlist"
                 fi
             fi
         else
@@ -417,14 +457,18 @@ test_temp_user_connection() {
     log_info "Waiting for pgbouncer to process userlist changes..."
     sleep 10
     
-    # Debug: Show what's in the userlist file
-    log_info "Debug: Current userlist contents:"
+    # Debug: Show what's in the userlist file after modification
+    log_info "Debug: Current userlist contents after modification:"
     if [ -f "/etc/pgbouncer/userlist.txt" ]; then
-        while IFS= read -r line; do
+        sudo cat /etc/pgbouncer/userlist.txt | while IFS= read -r line; do
             if [[ "$line" == *"$temp_user"* ]]; then
                 log_info "Found temp user line: $line"
+            elif [[ "$line" == *"postgres"* ]]; then
+                log_info "Found postgres user line: $line"
+            else
+                log_info "Other line: $line"
             fi
-        done < /etc/pgbouncer/userlist.txt
+        done
     fi
     
     # Debug: Check pgbouncer status
@@ -433,6 +477,23 @@ test_temp_user_connection() {
         log_info "Debug: pgbouncer service is active"
     else
         log_warn "Debug: pgbouncer service is NOT active"
+    fi
+    
+    # Debug: Verify postgres user is still in userlist
+    log_info "Debug: Verifying postgres user is still in userlist"
+    if sudo grep -q '"postgres"' /etc/pgbouncer/userlist.txt; then
+        log_info "Debug: postgres user found in userlist"
+    else
+        log_warn "Debug: postgres user NOT found in userlist - this is the problem!"
+        # Try to restore from backup if postgres user is missing
+        if [ -f "/etc/pgbouncer/userlist.txt.backup" ]; then
+            log_warn "Debug: Restoring userlist from backup due to missing postgres user"
+            sudo cp /etc/pgbouncer/userlist.txt.backup /etc/pgbouncer/userlist.txt
+            sudo chown postgres:postgres /etc/pgbouncer/userlist.txt
+            sudo chmod 600 /etc/pgbouncer/userlist.txt
+            execute_silently "sudo systemctl reload pgbouncer" "" "Failed to reload pgbouncer after restore"
+            sleep 5
+        fi
     fi
     
     # Debug: Test basic pgbouncer connectivity with postgres user first to determine SSL requirements
