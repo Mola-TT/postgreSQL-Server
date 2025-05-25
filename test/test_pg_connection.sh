@@ -168,7 +168,8 @@ test_direct_connection() {
 # Test connection through pgbouncer
 test_pgbouncer_connection() {
     # Test first with postgres database explicitly, using SSL mode that works with pgbouncer
-    if output=$(PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql -h localhost -p "${PGB_LISTEN_PORT}" -U postgres -d postgres -c "SELECT 1 as connected;" -t --set=sslmode=require --set=sslcert= --set=sslkey= --set=sslrootcert= 2>/dev/null); then
+    # Use IPv4 (127.0.0.1) to ensure consistent behavior
+    if output=$(PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql -h 127.0.0.1 -p "${PGB_LISTEN_PORT}" -U postgres -d postgres -c "SELECT 1 as connected;" -t --set=sslmode=require --set=sslcert= --set=sslkey= --set=sslrootcert= 2>/dev/null); then
         if [[ "$output" == *"1"* ]]; then
             log_status_pass "Connected to PostgreSQL through pgbouncer on port ${PGB_LISTEN_PORT} (SSL required)"
             return 0
@@ -426,8 +427,8 @@ test_temp_user_connection() {
     local pgbouncer_success=false
     
     # Since pgbouncer requires SSL, try with SSL mode require and no certificate verification
-    # This matches what works for the postgres user in the regular test
-    if output=$(PGPASSWORD="$temp_password" psql -h localhost -p "${PGB_LISTEN_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t --set=sslmode=require --set=sslcert= --set=sslkey= --set=sslrootcert= 2>/dev/null); then
+    # Force IPv4 connection (127.0.0.1) to match what works for the postgres user in the regular test
+    if output=$(PGPASSWORD="$temp_password" psql -h 127.0.0.1 -p "${PGB_LISTEN_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t --set=sslmode=require --set=sslcert= --set=sslkey= --set=sslrootcert= 2>/dev/null); then
         if [[ "$output" == *"temp_user_connected"* ]]; then
             log_status_pass "Connected to PostgreSQL through pgbouncer with temporary user (SSL required)"
             pgbouncer_success=true
@@ -437,11 +438,11 @@ test_temp_user_connection() {
         fi
     else
         # If SSL required fails, show the error and try other SSL modes
-        error_output=$(PGPASSWORD="$temp_password" psql -h localhost -p "${PGB_LISTEN_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t --set=sslmode=require --set=sslcert= --set=sslkey= --set=sslrootcert= 2>&1 || true)
+        error_output=$(PGPASSWORD="$temp_password" psql -h 127.0.0.1 -p "${PGB_LISTEN_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t --set=sslmode=require --set=sslcert= --set=sslkey= --set=sslrootcert= 2>&1 || true)
         log_warn "SSL required connection failed: $error_output"
         
-        # Try with SSL prefer mode
-        if output=$(PGPASSWORD="$temp_password" psql -h localhost -p "${PGB_LISTEN_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t --set=sslmode=prefer --set=sslcert= --set=sslkey= --set=sslrootcert= 2>/dev/null); then
+        # Try with SSL prefer mode (IPv4)
+        if output=$(PGPASSWORD="$temp_password" psql -h 127.0.0.1 -p "${PGB_LISTEN_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t --set=sslmode=prefer --set=sslcert= --set=sslkey= --set=sslrootcert= 2>/dev/null); then
             if [[ "$output" == *"temp_user_connected"* ]]; then
                 log_status_pass "Connected to PostgreSQL through pgbouncer with temporary user (SSL prefer)"
                 pgbouncer_success=true
@@ -451,10 +452,10 @@ test_temp_user_connection() {
             fi
         else
             # Show the error for SSL prefer mode
-            prefer_error=$(PGPASSWORD="$temp_password" psql -h localhost -p "${PGB_LISTEN_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t --set=sslmode=prefer --set=sslcert= --set=sslkey= --set=sslrootcert= 2>&1 || true)
+            prefer_error=$(PGPASSWORD="$temp_password" psql -h 127.0.0.1 -p "${PGB_LISTEN_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t --set=sslmode=prefer --set=sslcert= --set=sslkey= --set=sslrootcert= 2>&1 || true)
             log_warn "SSL prefer connection failed: $prefer_error"
-            # Try with SSL allow mode
-            if output=$(PGPASSWORD="$temp_password" psql -h localhost -p "${PGB_LISTEN_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t --set=sslmode=allow --set=sslcert= --set=sslkey= --set=sslrootcert= 2>/dev/null); then
+            # Try with SSL allow mode (IPv4)
+            if output=$(PGPASSWORD="$temp_password" psql -h 127.0.0.1 -p "${PGB_LISTEN_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t --set=sslmode=allow --set=sslcert= --set=sslkey= --set=sslrootcert= 2>/dev/null); then
                 if [[ "$output" == *"temp_user_connected"* ]]; then
                     log_status_pass "Connected to PostgreSQL through pgbouncer with temporary user (SSL allow)"
                     pgbouncer_success=true
@@ -464,10 +465,10 @@ test_temp_user_connection() {
                 fi
             else
                 # Show the error for SSL allow mode
-                allow_error=$(PGPASSWORD="$temp_password" psql -h localhost -p "${PGB_LISTEN_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t --set=sslmode=allow --set=sslcert= --set=sslkey= --set=sslrootcert= 2>&1 || true)
+                allow_error=$(PGPASSWORD="$temp_password" psql -h 127.0.0.1 -p "${PGB_LISTEN_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t --set=sslmode=allow --set=sslcert= --set=sslkey= --set=sslrootcert= 2>&1 || true)
                 log_warn "SSL allow connection failed: $allow_error"
-                # Try without SSL as last resort
-                if output=$(PGPASSWORD="$temp_password" psql -h localhost -p "${PGB_LISTEN_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t --set=sslmode=disable 2>/dev/null); then
+                # Try without SSL as last resort (IPv4)
+                if output=$(PGPASSWORD="$temp_password" psql -h 127.0.0.1 -p "${PGB_LISTEN_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t --set=sslmode=disable 2>/dev/null); then
                     if [[ "$output" == *"temp_user_connected"* ]]; then
                         log_status_pass "Connected to PostgreSQL through pgbouncer with temporary user (SSL disabled)"
                         pgbouncer_success=true
@@ -477,7 +478,7 @@ test_temp_user_connection() {
                     fi
                 else
                     # Show the error for SSL disabled mode
-                    disable_error=$(PGPASSWORD="$temp_password" psql -h localhost -p "${PGB_LISTEN_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t --set=sslmode=disable 2>&1 || true)
+                    disable_error=$(PGPASSWORD="$temp_password" psql -h 127.0.0.1 -p "${PGB_LISTEN_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t --set=sslmode=disable 2>&1 || true)
                     log_warn "SSL disabled connection failed: $disable_error"
                     log_status_fail "Failed to connect through pgbouncer with temporary user with all SSL modes"
                     pgbouncer_success=false
