@@ -355,9 +355,21 @@ test_temp_user_connection() {
         
         # Get the password hash using a direct query (simpler approach for test users)
         local password_hash
-        if password_hash=$(su - postgres -c "psql -t -c \"SELECT rolpassword FROM pg_authid WHERE rolname='$temp_user';\"" 2>/dev/null | tr -d ' \n\r\t'); then
-            if [ -n "$password_hash" ]; then
+        log_info "Debug: Attempting to extract password hash with query: SELECT rolpassword FROM pg_authid WHERE rolname='$temp_user'"
+        
+        # First, let's verify the user exists
+        local user_exists
+        user_exists=$(su - postgres -c "psql -t -c \"SELECT COUNT(*) FROM pg_authid WHERE rolname='$temp_user';\"" 2>/dev/null | tr -d ' \n\r\t')
+        log_info "Debug: User exists check returned: '$user_exists'"
+        
+        if [ "$user_exists" = "1" ]; then
+            # User exists, now get the password hash
+            password_hash=$(su - postgres -c "psql -t -c \"SELECT rolpassword FROM pg_authid WHERE rolname='$temp_user';\"" 2>/dev/null | tr -d ' \n\r\t')
+            log_info "Debug: Raw password hash extracted: '$password_hash'"
+            
+            if [ -n "$password_hash" ] && [ "$password_hash" != "||rolpassword||" ]; then
                 # Add user to userlist with proper format
+                log_info "Debug: Adding to userlist: \"$temp_user\" \"$password_hash\""
                 if execute_silently "echo \"\\\"$temp_user\\\" \\\"$password_hash\\\"\" | sudo tee -a /etc/pgbouncer/userlist.txt > /dev/null" \
                     "Successfully added temporary user to pgbouncer authentication file" \
                     "Failed to add temporary user to pgbouncer authentication file"; then
@@ -369,10 +381,24 @@ test_temp_user_connection() {
                     log_warn "Failed to add temporary user to pgbouncer authentication file"
                 fi
             else
-                log_warn "Password hash extraction returned empty result for user: $temp_user"
+                log_warn "Password hash extraction returned invalid result for user: $temp_user (got: '$password_hash')"
+                # Try alternative extraction method
+                log_info "Debug: Trying alternative extraction method..."
+                password_hash=$(su - postgres -c "psql -t -c \"COPY (SELECT '\\\"$temp_user\\\" \\\"' || rolpassword || '\\\"') TO STDOUT FROM pg_authid WHERE rolname='$temp_user';\"" 2>/dev/null)
+                log_info "Debug: Alternative method result: '$password_hash'"
+                if [ -n "$password_hash" ]; then
+                    if execute_silently "echo \"$password_hash\" | sudo tee -a /etc/pgbouncer/userlist.txt > /dev/null" \
+                        "Successfully added temporary user to pgbouncer authentication file (alternative method)" \
+                        "Failed to add temporary user to pgbouncer authentication file (alternative method)"; then
+                        
+                        # Fix file ownership and permissions after modification
+                        execute_silently "sudo chown postgres:postgres /etc/pgbouncer/userlist.txt" "" "Failed to fix ownership"
+                        execute_silently "sudo chmod 600 /etc/pgbouncer/userlist.txt" "" "Failed to fix permissions"
+                    fi
+                fi
             fi
         else
-            log_warn "Failed to extract password hash for temporary user: $temp_user"
+            log_warn "Temporary user $temp_user does not exist in pg_authid table"
         fi
     fi
     
