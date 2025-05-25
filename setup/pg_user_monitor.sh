@@ -90,8 +90,7 @@ get_current_user_state() {
       )
     FROM pg_authid 
     WHERE rolname NOT LIKE 'pg_%' 
-    AND rolname != 'postgres_exporter'
-    ORDER BY rolname;
+    AND rolname != 'postgres_exporter';
   \"" 2>"$temp_file.err" > "$temp_file"
   
   # If JSON aggregation failed, try a simpler approach
