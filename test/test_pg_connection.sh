@@ -353,6 +353,12 @@ test_temp_user_connection() {
         log_info "Extracting password hash for user: $temp_user"
         log_info "Using authentication type: $auth_type"
         
+        # Clean up any existing entries for this user first to prevent duplicates
+        log_info "Debug: Cleaning up any existing entries for user: $temp_user"
+        execute_silently "sudo sed -i '/\"'$temp_user'\"/d' /etc/pgbouncer/userlist.txt" \
+            "" \
+            "Failed to clean up existing entries"
+        
         # Get the password hash using a direct query (simpler approach for test users)
         local password_hash
         log_info "Debug: Attempting to extract password hash with query: SELECT rolpassword FROM pg_authid WHERE rolname='$temp_user'"
@@ -363,22 +369,15 @@ test_temp_user_connection() {
         log_info "Debug: User exists check returned: '$user_exists'"
         
         if [ "$user_exists" = "1" ]; then
-            # User exists, now get the password hash
-            password_hash=$(su - postgres -c "psql -t -c \"SELECT rolpassword FROM pg_authid WHERE rolname='$temp_user';\"" 2>/dev/null | tr -d ' \n\r\t')
+            # User exists, now get the password hash - use a more careful extraction
+            password_hash=$(su - postgres -c "psql -t -A -c \"SELECT rolpassword FROM pg_authid WHERE rolname='$temp_user';\"" 2>/dev/null | tr -d '\n\r')
             log_info "Debug: Raw password hash extracted: '$password_hash'"
             
-            if [ -n "$password_hash" ] && [ "$password_hash" != "||rolpassword||" ]; then
-                # Clean up any existing entries for this user first
-                log_info "Debug: Cleaning up any existing entries for user: $temp_user"
-                execute_silently "grep -v \"\\\"$temp_user\\\"\" /etc/pgbouncer/userlist.txt | sudo tee /etc/pgbouncer/userlist.txt.tmp > /dev/null && sudo mv /etc/pgbouncer/userlist.txt.tmp /etc/pgbouncer/userlist.txt" \
-                    "" \
-                    "Failed to clean up existing entries"
-                
-                # Add user to userlist with proper format
+            if [ -n "$password_hash" ] && [ "$password_hash" != "||rolpassword||" ] && [[ "$password_hash" == SCRAM-SHA-256* ]]; then
+                # Add user to userlist with proper format - use printf for better control
                 log_info "Debug: Adding to userlist: \"$temp_user\" \"$password_hash\""
-                if execute_silently "echo \"\\\"$temp_user\\\" \\\"$password_hash\\\"\" | sudo tee -a /etc/pgbouncer/userlist.txt > /dev/null" \
-                    "Successfully added temporary user to pgbouncer authentication file" \
-                    "Failed to add temporary user to pgbouncer authentication file"; then
+                if printf '"%s" "%s"\n' "$temp_user" "$password_hash" | sudo tee -a /etc/pgbouncer/userlist.txt > /dev/null; then
+                    log_info "Successfully added temporary user to pgbouncer authentication file"
                     
                     # Fix file ownership and permissions after modification
                     execute_silently "sudo chown postgres:postgres /etc/pgbouncer/userlist.txt" "" "Failed to fix ownership"
@@ -388,19 +387,14 @@ test_temp_user_connection() {
                 fi
             else
                 log_warn "Password hash extraction returned invalid result for user: $temp_user (got: '$password_hash')"
-                # Try alternative extraction method
-                log_info "Debug: Trying alternative extraction method..."
-                password_hash=$(su - postgres -c "psql -t -c \"COPY (SELECT '\\\"$temp_user\\\" \\\"' || rolpassword || '\\\"') TO STDOUT FROM pg_authid WHERE rolname='$temp_user';\"" 2>/dev/null)
-                log_info "Debug: Alternative method result: '$password_hash'"
-                if [ -n "$password_hash" ]; then
-                    if execute_silently "echo \"$password_hash\" | sudo tee -a /etc/pgbouncer/userlist.txt > /dev/null" \
-                        "Successfully added temporary user to pgbouncer authentication file (alternative method)" \
-                        "Failed to add temporary user to pgbouncer authentication file (alternative method)"; then
-                        
-                        # Fix file ownership and permissions after modification
-                        execute_silently "sudo chown postgres:postgres /etc/pgbouncer/userlist.txt" "" "Failed to fix ownership"
-                        execute_silently "sudo chmod 600 /etc/pgbouncer/userlist.txt" "" "Failed to fix permissions"
-                    fi
+                # For testing purposes, if SCRAM fails, try with plain text password
+                log_info "Debug: Trying plain text password for testing..."
+                if printf '"%s" "%s"\n' "$temp_user" "$temp_password" | sudo tee -a /etc/pgbouncer/userlist.txt > /dev/null; then
+                    log_info "Added temporary user with plain text password for testing"
+                    
+                    # Fix file ownership and permissions after modification
+                    execute_silently "sudo chown postgres:postgres /etc/pgbouncer/userlist.txt" "" "Failed to fix ownership"
+                    execute_silently "sudo chmod 600 /etc/pgbouncer/userlist.txt" "" "Failed to fix permissions"
                 fi
             fi
         else
@@ -434,17 +428,26 @@ test_temp_user_connection() {
         log_warn "Debug: pgbouncer service is NOT active"
     fi
     
-    # Debug: Test basic pgbouncer connectivity with postgres user first
+    # Debug: Test basic pgbouncer connectivity with postgres user first to determine SSL requirements
     log_info "Debug: Testing basic pgbouncer connectivity with postgres user"
+    local postgres_ssl_mode=""
+    
+    # Try without SSL first
     if PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql -h localhost -p "${PGB_LISTEN_PORT}" -U postgres -d postgres -c "SELECT 1;" -t >/dev/null 2>&1; then
         log_info "Debug: Basic pgbouncer connectivity works with postgres user (without SSL)"
-    elif PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql -h localhost -p "${PGB_LISTEN_PORT}" -U postgres -d postgres -c "SELECT 1;" -t --set=sslmode=require >/dev/null 2>&1; then
-        log_info "Debug: Basic pgbouncer connectivity works with postgres user (with SSL)"
+        postgres_ssl_mode="none"
     else
-        log_warn "Debug: Basic pgbouncer connectivity FAILED with postgres user (both with and without SSL)"
-        # Show the actual error
-        error_output=$(PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql -h localhost -p "${PGB_LISTEN_PORT}" -U postgres -d postgres -c "SELECT 1;" -t 2>&1 || true)
-        log_warn "Debug: Error details: $error_output"
+        # Try with SSL
+        if PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql -h localhost -p "${PGB_LISTEN_PORT}" -U postgres -d postgres -c "SELECT 1;" -t --set=sslmode=require >/dev/null 2>&1; then
+            log_info "Debug: Basic pgbouncer connectivity works with postgres user (with SSL)"
+            postgres_ssl_mode="require"
+        else
+            log_warn "Debug: Basic pgbouncer connectivity FAILED with postgres user (both with and without SSL)"
+            # Show the actual error
+            error_output=$(PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql -h localhost -p "${PGB_LISTEN_PORT}" -U postgres -d postgres -c "SELECT 1;" -t 2>&1 || true)
+            log_warn "Debug: Error details: $error_output"
+            postgres_ssl_mode="failed"
+        fi
     fi
     
     # Try connecting directly to PostgreSQL with the temporary user
@@ -461,21 +464,31 @@ test_temp_user_connection() {
         direct_success=false
     fi
     
-    # Try connecting through pgbouncer with the temporary user
+    # Try connecting through pgbouncer with the temporary user using the same SSL mode that works for postgres
     log_info "Debug: Attempting pgbouncer connection with user: $temp_user on port: ${PGB_LISTEN_PORT}"
+    log_info "Debug: Using SSL mode determined from postgres user test: $postgres_ssl_mode"
     
-    # Try without SSL first
-    if output=$(PGPASSWORD="$temp_password" psql -h localhost -p "${PGB_LISTEN_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t 2>&1); then
-        if [[ "$output" == *"temp_user_connected"* ]]; then
-            log_status_pass "Connected to PostgreSQL through pgbouncer with temporary user (without SSL)"
-            pgbouncer_success=true
+    local pgbouncer_success=false
+    
+    if [ "$postgres_ssl_mode" = "failed" ]; then
+        log_status_fail "Cannot test temporary user - basic pgbouncer connectivity failed for postgres user"
+        pgbouncer_success=false
+    elif [ "$postgres_ssl_mode" = "none" ]; then
+        # Try without SSL since postgres user works without SSL
+        if output=$(PGPASSWORD="$temp_password" psql -h localhost -p "${PGB_LISTEN_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t 2>&1); then
+            if [[ "$output" == *"temp_user_connected"* ]]; then
+                log_status_pass "Connected to PostgreSQL through pgbouncer with temporary user (without SSL)"
+                pgbouncer_success=true
+            else
+                log_status_fail "Unexpected output from temporary user pgbouncer connection (without SSL): $output"
+                pgbouncer_success=false
+            fi
         else
-            log_info "Debug: Unexpected output from temporary user pgbouncer connection (without SSL): $output"
+            log_status_fail "Failed to connect through pgbouncer with temporary user (without SSL). Error: $output"
             pgbouncer_success=false
         fi
-    else
-        log_info "Debug: Failed to connect without SSL, trying with SSL. Error: $output"
-        # Try with SSL
+    elif [ "$postgres_ssl_mode" = "require" ]; then
+        # Try with SSL since postgres user requires SSL
         if output=$(PGPASSWORD="$temp_password" psql -h localhost -p "${PGB_LISTEN_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t --set=sslmode=require 2>&1); then
             if [[ "$output" == *"temp_user_connected"* ]]; then
                 log_status_pass "Connected to PostgreSQL through pgbouncer with temporary user (with SSL)"
@@ -485,14 +498,14 @@ test_temp_user_connection() {
                 pgbouncer_success=false
             fi
         else
-            log_status_fail "Failed to connect through pgbouncer with temporary user (both SSL and non-SSL). Final error: $output"
+            log_status_fail "Failed to connect through pgbouncer with temporary user (with SSL). Error: $output"
             pgbouncer_success=false
         fi
     fi
     
     # Clean up pgbouncer userlist.txt
     log_info "Cleaning up: Removing temporary user from pgbouncer authentication file"
-    execute_silently "grep -v \"\\\"$temp_user\\\"\" /etc/pgbouncer/userlist.txt | sudo tee /etc/pgbouncer/userlist.txt.new > /dev/null && sudo mv /etc/pgbouncer/userlist.txt.new /etc/pgbouncer/userlist.txt" \
+    execute_silently "sudo sed -i '/\"'$temp_user'\"/d' /etc/pgbouncer/userlist.txt" \
         "" \
         "Failed to remove temporary user from pgbouncer authentication file" || log_warn "Could not clean up pgbouncer authentication file"
     
