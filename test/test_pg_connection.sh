@@ -387,6 +387,32 @@ test_temp_user_connection() {
     # Wait for pgbouncer to fully reload and process userlist changes
     sleep 5
     
+    # Debug: Show what's in the userlist file
+    log_info "Debug: Current userlist contents:"
+    if [ -f "/etc/pgbouncer/userlist.txt" ]; then
+        while IFS= read -r line; do
+            if [[ "$line" == *"$temp_user"* ]]; then
+                log_info "Found temp user line: $line"
+            fi
+        done < /etc/pgbouncer/userlist.txt
+    fi
+    
+    # Debug: Check pgbouncer status
+    log_info "Debug: Checking pgbouncer service status"
+    if systemctl is-active --quiet pgbouncer; then
+        log_info "Debug: pgbouncer service is active"
+    else
+        log_warn "Debug: pgbouncer service is NOT active"
+    fi
+    
+    # Debug: Test basic pgbouncer connectivity with postgres user first
+    log_info "Debug: Testing basic pgbouncer connectivity with postgres user"
+    if PGPASSWORD="${PG_SUPERUSER_PASSWORD}" psql -h localhost -p "${PGB_LISTEN_PORT}" -U postgres -d postgres -c "SELECT 1;" -t >/dev/null 2>&1; then
+        log_info "Debug: Basic pgbouncer connectivity works with postgres user"
+    else
+        log_warn "Debug: Basic pgbouncer connectivity FAILED with postgres user"
+    fi
+    
     # Try connecting directly to PostgreSQL with the temporary user
     if output=$(PGPASSWORD="$temp_password" psql -h localhost -p "${DB_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t 2>/dev/null); then
         if [[ "$output" == *"temp_user_connected"* ]]; then
@@ -402,16 +428,17 @@ test_temp_user_connection() {
     fi
     
     # Try connecting through pgbouncer with the temporary user
-    if output=$(PGPASSWORD="$temp_password" psql -h localhost -p "${PGB_LISTEN_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t 2>/dev/null); then
+    log_info "Debug: Attempting pgbouncer connection with user: $temp_user on port: ${PGB_LISTEN_PORT}"
+    if output=$(PGPASSWORD="$temp_password" psql -h localhost -p "${PGB_LISTEN_PORT}" -U "$temp_user" -d postgres -c "SELECT 'temp_user_connected' as result;" -t 2>&1); then
         if [[ "$output" == *"temp_user_connected"* ]]; then
             log_status_pass "Connected to PostgreSQL through pgbouncer with temporary user"
             pgbouncer_success=true
         else
-            log_status_fail "Unexpected output from temporary user pgbouncer connection"
+            log_status_fail "Unexpected output from temporary user pgbouncer connection: $output"
             pgbouncer_success=false
         fi
     else
-        log_status_fail "Failed to connect through pgbouncer with temporary user"
+        log_status_fail "Failed to connect through pgbouncer with temporary user. Error: $output"
         pgbouncer_success=false
     fi
     
