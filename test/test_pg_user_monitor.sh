@@ -8,6 +8,12 @@ TEST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Source required libraries
 source "$TEST_SCRIPT_DIR/../lib/logger.sh"
 
+# Load environment variables
+source "$TEST_SCRIPT_DIR/../conf/default.env"
+if [ -f "$TEST_SCRIPT_DIR/../conf/user.env" ]; then
+    source "$TEST_SCRIPT_DIR/../conf/user.env"
+fi
+
 # Test configuration
 TEST_USER_PREFIX="test_monitor_user"
 TEST_PASSWORD="test_password_123"

@@ -20,6 +20,8 @@ fi
 
 # Source required libraries
 if ! type log_info &>/dev/null; then
+  # Set LOG_FILE to match the monitor log path for consistent logging
+  export LOG_FILE="$PG_USER_MONITOR_LOG_PATH"
   source "$PG_USER_MONITOR_SCRIPT_DIR/../lib/logger.sh"
 fi
 
