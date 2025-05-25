@@ -315,6 +315,7 @@ test_firewall_configuration() {
 test_temp_user_connection() {
     local temp_user="temp_test_user"
     local temp_password="temp_password_123"
+    local pg_monitor_was_running=false
     
     log_info "Creating temporary test user: $temp_user"
     
@@ -446,6 +447,15 @@ test_temp_user_connection() {
         else
             log_warn "Temporary user $temp_user does not exist in pg_authid table"
         fi
+    fi
+    
+    # Temporarily stop pg_user_monitor to prevent it from overwriting our changes
+    log_info "Debug: Temporarily stopping pg_user_monitor service to prevent userlist interference"
+    if systemctl is-active --quiet pg-user-monitor; then
+        pg_monitor_was_running=true
+        execute_silently "sudo systemctl stop pg-user-monitor" \
+            "Stopped pg_user_monitor service" \
+            "Failed to stop pg_user_monitor service"
     fi
     
     # Reload pgbouncer to apply changes
@@ -650,6 +660,14 @@ test_temp_user_connection() {
     execute_silently "sudo systemctl reload pgbouncer || sudo systemctl restart pgbouncer" \
         "" \
         "Failed to reload pgbouncer after cleanup"
+    
+    # Restart pg_user_monitor service if it was running before
+    if [ "$pg_monitor_was_running" = true ]; then
+        log_info "Debug: Restarting pg_user_monitor service"
+        execute_silently "sudo systemctl start pg-user-monitor" \
+            "Restarted pg_user_monitor service" \
+            "Failed to restart pg_user_monitor service"
+    fi
     
     # Drop the temporary user - redirect output to /dev/null
     log_info "Cleaning up: Removing temporary test user"
