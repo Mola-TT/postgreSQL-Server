@@ -5,6 +5,46 @@ alwaysApply: true
 ---
 # Milestone
 
+## Milestone 9 (In Progress)
+- Create `disaster_recovery.sh` under setup folder that:
+  - Implements automated system recovery procedures after unexpected reboots
+  - Configures service auto-restart mechanisms for all critical components
+  - Implements database recovery protocols for handling software freezes
+  - Creates watchdog services to monitor and automatically recover failed components
+  - Implements transaction journaling to prevent data loss during crashes
+  - Configures proper service dependencies to ensure correct startup order
+  - Implements recovery verification to ensure all services return to proper state
+  - Creates failover mechanisms for handling unexpected situations
+- Create recovery management scripts:
+  - Script to test recovery procedures in a controlled environment
+  - Script to simulate various disaster scenarios for testing
+  - Script to analyze system logs after recovery for post-mortem assessment
+  - Script to verify system integrity after recovery events
+- Create comprehensive test script (`test_disaster_recovery.sh`) to validate:
+  - System reboot recovery procedures
+  - PostgreSQL crash recovery
+  - pgbouncer failure and recovery
+  - Nginx failure and recovery
+  - Netdata monitoring during recovery events
+  - Email notifications for recovery events
+- Create specialized test scripts for recovery scenarios:
+  - `test_system_reboot.sh` to validate automatic service restoration after reboot
+  - `test_service_failure.sh` to simulate and validate recovery from service crashes
+  - `test_database_corruption.sh` to validate data integrity protection mechanisms
+  - `test_network_disruption.sh` to simulate and recover from network failures
+  - `test_disk_failure.sh` to validate recovery from storage subsystem issues
+  - `test_resource_exhaustion.sh` to test recovery from memory/CPU/disk space depletion
+- Update environment configuration:
+  - Add recovery-specific settings to default.env and user.env.template
+  - Add recovery timeout configuration
+  - Add recovery notification settings
+  - Add recovery verification thresholds
+- Implement recovery monitoring:
+  - Add Netdata dashboard for recovery status monitoring
+  - Create health checks for recovery systems
+  - Implement recovery time metrics and monitoring
+  - Add recovery failure alerting
+
 ## Milestone 8 (Completed)
 - Created `pg_user_monitor.sh` under setup folder that:
   - Implements automatic PostgreSQL user synchronization with pgbouncer userlist
