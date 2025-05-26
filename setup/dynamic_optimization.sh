@@ -492,8 +492,49 @@ optimize_postgresql() {
   if [ "$MINIMAL_MODE" = "false" ]; then
     if systemctl is-active --quiet postgresql; then
       log_info "Reloading PostgreSQL configuration..." >&2
-      systemctl reload postgresql > /dev/null 2>&1
-      log_info "PostgreSQL configuration reloaded successfully" >&2
+      
+      # First, validate the configuration file syntax
+      log_info "Validating PostgreSQL configuration syntax..." >&2
+      if ! su - postgres -c "postgres --check-config" >/dev/null 2>&1; then
+        log_error "PostgreSQL configuration validation failed. Configuration file contains errors." >&2
+        log_error "Please check the configuration file: $config_file" >&2
+        return 1
+      fi
+      
+      # Clear any previous error states by temporarily removing the config file
+      local temp_backup="${config_file}.temp_backup"
+      mv "$config_file" "$temp_backup"
+      
+      # Reload without the config file first to clear error state
+      systemctl reload postgresql >/dev/null 2>&1
+      sleep 2
+      
+      # Restore the config file
+      mv "$temp_backup" "$config_file"
+      
+      # Now reload with the corrected configuration
+      if systemctl reload postgresql >/dev/null 2>&1; then
+        # Wait a moment for the reload to complete
+        sleep 3
+        
+        # Verify the configuration was actually applied by checking a key parameter
+        local current_shared_buffers
+        current_shared_buffers=$(su - postgres -c "psql -t -c \"SHOW shared_buffers;\"" 2>/dev/null | grep -v '^$' | tr -d ' ')
+        
+        # Extract expected shared_buffers from our config file
+        local expected_shared_buffers
+        expected_shared_buffers=$(grep "^shared_buffers" "$config_file" | sed "s/.*=[[:space:]]*['\"]\\?\\([^'\"]*\\)['\"]\\?.*/\\1/")
+        
+        if [ "$current_shared_buffers" = "$expected_shared_buffers" ]; then
+          log_info "PostgreSQL configuration reloaded and verified successfully" >&2
+        else
+          log_warn "PostgreSQL reloaded but configuration may not be fully applied" >&2
+          log_warn "Expected shared_buffers: $expected_shared_buffers, Current: $current_shared_buffers" >&2
+        fi
+      else
+        log_error "Failed to reload PostgreSQL configuration" >&2
+        return 1
+      fi
     else
       log_warn "PostgreSQL service is not running, skipping reload" >&2
     fi
