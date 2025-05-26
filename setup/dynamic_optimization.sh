@@ -493,13 +493,11 @@ optimize_postgresql() {
     if systemctl is-active --quiet postgresql; then
       log_info "Reloading PostgreSQL configuration..." >&2
       
-      # First, validate the configuration file syntax
-      log_info "Validating PostgreSQL configuration syntax..." >&2
-      if ! su - postgres -c "postgres --check-config" >/dev/null 2>&1; then
-        log_error "PostgreSQL configuration validation failed. Configuration file contains errors." >&2
-        log_error "Please check the configuration file: $config_file" >&2
-        return 1
-      fi
+      # Note: Skipping postgres --check-config validation because:
+      # 1. It expects config files in data directory, but Ubuntu/Debian stores them in /etc/postgresql/
+      # 2. systemctl reload postgresql will validate the configuration anyway
+      # 3. If there are syntax errors, the reload will fail and we'll catch that
+      log_info "Preparing to reload PostgreSQL configuration..." >&2
       
       # Clear any previous error states by temporarily removing the config file
       local temp_backup="${config_file}.temp_backup"
@@ -513,7 +511,11 @@ optimize_postgresql() {
       mv "$temp_backup" "$config_file"
       
       # Now reload with the corrected configuration
-      if systemctl reload postgresql >/dev/null 2>&1; then
+      local reload_output
+      reload_output=$(systemctl reload postgresql 2>&1)
+      local reload_exit_code=$?
+      
+      if [ $reload_exit_code -eq 0 ]; then
         # Wait a moment for the reload to complete
         sleep 3
         
@@ -530,9 +532,28 @@ optimize_postgresql() {
         else
           log_warn "PostgreSQL reloaded but configuration may not be fully applied" >&2
           log_warn "Expected shared_buffers: $expected_shared_buffers, Current: $current_shared_buffers" >&2
+          
+          # Check for any configuration errors in the logs
+          log_info "Checking PostgreSQL logs for configuration errors..." >&2
+          local recent_errors
+          recent_errors=$(journalctl -u postgresql -n 10 --no-pager 2>/dev/null | grep -i "error\|fatal\|contains errors" || echo "No recent errors found")
+          if [ "$recent_errors" != "No recent errors found" ]; then
+            log_warn "Recent PostgreSQL log errors:" >&2
+            echo "$recent_errors" >&2
+          fi
         fi
       else
-        log_error "Failed to reload PostgreSQL configuration" >&2
+        log_error "Failed to reload PostgreSQL configuration (exit code: $reload_exit_code)" >&2
+        if [ -n "$reload_output" ]; then
+          log_error "Reload output: $reload_output" >&2
+        fi
+        
+        # Check PostgreSQL logs for specific error details
+        log_info "Checking PostgreSQL logs for configuration errors..." >&2
+        local recent_errors
+        recent_errors=$(journalctl -u postgresql -n 5 --no-pager 2>/dev/null | grep -i "error\|fatal\|contains errors" || echo "No recent errors found")
+        log_error "Recent PostgreSQL log errors: $recent_errors" >&2
+        
         return 1
       fi
     else
