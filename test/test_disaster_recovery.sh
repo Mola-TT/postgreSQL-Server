@@ -33,11 +33,11 @@ run_test_with_timeout() {
   local test_name="$1"
   local test_function="$2"
   local timeout="${3:-$TEST_TIMEOUT}"
-  
+
   log_info "Running test: $test_name"
-  
-  # Run test with timeout
-  if timeout "$timeout" bash -c "$test_function"; then
+
+  # Run test with timeout by calling the function directly
+  if timeout "$timeout" bash -c "$(declare -f "$test_function"); $test_function"; then
     log_info "✓ PASS: $test_name"
     return 0
   else

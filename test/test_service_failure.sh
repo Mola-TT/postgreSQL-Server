@@ -374,7 +374,7 @@ main() {
       
       log_info "Running test: $test_name"
       
-      if timeout "$TEST_TIMEOUT" "$test_func"; then
+      if timeout "$TEST_TIMEOUT" bash -c "$(declare -f "$test_func"); $test_func"; then
         log_info "✓ PASS: $test_name"
         ((tests_passed++))
       else
@@ -388,7 +388,7 @@ main() {
       
       log_info "Running test: $test_name"
       
-      if timeout "$TEST_TIMEOUT" "$test_func" "$test_param"; then
+      if timeout "$TEST_TIMEOUT" bash -c "$(declare -f "$test_func"); $test_func '$test_param'"; then
         log_info "✓ PASS: $test_name"
         ((tests_passed++))
       else
