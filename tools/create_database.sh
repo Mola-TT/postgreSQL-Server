@@ -219,8 +219,45 @@ create_admin_user() {
     
     # Create the admin user
     PGPASSWORD="$PG_SUPERUSER_PASS" psql -h localhost -p "$DB_PORT" -U "$PG_SUPERUSER" -d postgres -q >/dev/null 2>&1 <<EOF
--- Create admin user with no inheritance to avoid default role privileges
-CREATE ROLE "$ADMIN_USER" WITH LOGIN PASSWORD '$ADMIN_PASSWORD' NOINHERIT;
+-- Create admin user with no inheritance and no default database access
+CREATE ROLE "$ADMIN_USER" WITH LOGIN PASSWORD '$ADMIN_PASSWORD' NOINHERIT NOCREATEDB NOCREATEROLE;
+
+-- The key insight: we need to use ALTER DEFAULT PRIVILEGES to prevent default access
+-- First grant minimal privileges, then revoke the inherited PUBLIC privileges
+
+-- Revoke all default privileges that this user might have inherited
+REVOKE ALL PRIVILEGES ON DATABASE postgres FROM "$ADMIN_USER";
+REVOKE ALL PRIVILEGES ON DATABASE template1 FROM "$ADMIN_USER";
+
+-- Specifically revoke CONNECT from existing databases  
+REVOKE CONNECT ON DATABASE postgres FROM "$ADMIN_USER";
+REVOKE CONNECT ON DATABASE template1 FROM "$ADMIN_USER";
+
+-- Use a more comprehensive approach to revoke from all databases
+DO \$\$
+DECLARE
+    db_record RECORD;
+    sql_cmd TEXT;
+BEGIN
+    FOR db_record IN 
+        SELECT datname FROM pg_database 
+        WHERE datname != '$NEW_DATABASE'
+        AND datistemplate = false
+    LOOP
+        sql_cmd := format('REVOKE ALL ON DATABASE %I FROM %I', db_record.datname, '$ADMIN_USER');
+        EXECUTE sql_cmd;
+        sql_cmd := format('REVOKE CONNECT ON DATABASE %I FROM %I', db_record.datname, '$ADMIN_USER');  
+        EXECUTE sql_cmd;
+    END LOOP;
+EXCEPTION
+    WHEN others THEN
+        -- If any revoke fails, continue
+        NULL;
+END;
+\$\$;
+
+-- Now grant CREATEROLE back since we need it for admin functions
+ALTER ROLE "$ADMIN_USER" CREATEROLE;
 
 -- Grant connection to the specific database only
 GRANT CONNECT ON DATABASE "$NEW_DATABASE" TO "$ADMIN_USER";
@@ -243,9 +280,8 @@ GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO "$ADMIN_USER";
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO "$ADMIN_USER";
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON SEQUENCES TO "$ADMIN_USER";
 
--- Allow admin to create users, but limit their scope
--- Admin can create roles but cannot grant superuser or replication privileges
-ALTER ROLE "$ADMIN_USER" CREATEROLE;
+-- Admin already has CREATEROLE from earlier setup
+-- Ensure admin cannot grant superuser or replication privileges
 
 -- Explicitly revoke CONNECT privileges from other databases
 -- This is necessary because the PUBLIC role often has default CONNECT privileges
