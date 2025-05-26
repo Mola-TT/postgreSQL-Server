@@ -26,7 +26,7 @@ fi
 # Test configuration
 TEST_LOG_PATH="${DISASTER_RECOVERY_LOG_PATH:-/var/log/disaster-recovery.log}.test"
 TEST_DURATION=300  # 5 minutes
-RECOVERY_SCRIPT="$SCRIPT_DIR/disaster_recovery.sh"
+RECOVERY_SCRIPT="$SCRIPT_DIR/../setup/disaster_recovery.sh"
 
 # Function to run controlled test
 run_controlled_test() {

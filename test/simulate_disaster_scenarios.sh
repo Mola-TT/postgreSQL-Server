@@ -25,7 +25,7 @@ fi
 
 # Simulation configuration
 SIMULATION_LOG_PATH="${DISASTER_RECOVERY_LOG_PATH:-/var/log/disaster-recovery.log}.simulation"
-RECOVERY_SCRIPT="$SCRIPT_DIR/disaster_recovery.sh"
+RECOVERY_SCRIPT="$SCRIPT_DIR/../setup/disaster_recovery.sh"
 SIMULATION_TIMEOUT=300  # 5 minutes max per simulation
 
 # Safety checks

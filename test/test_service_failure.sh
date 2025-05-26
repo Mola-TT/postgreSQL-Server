@@ -25,7 +25,7 @@ fi
 
 # Test configuration
 DISASTER_RECOVERY_SCRIPT="$SCRIPT_DIR/../setup/disaster_recovery.sh"
-SIMULATION_SCRIPT="$SCRIPT_DIR/../setup/simulate_disaster_scenarios.sh"
+SIMULATION_SCRIPT="$SCRIPT_DIR/simulate_disaster_scenarios.sh"
 RECOVERY_SERVICE_NAME="${DISASTER_RECOVERY_SERVICE_NAME:-disaster-recovery}"
 TEST_TIMEOUT=120  # 2 minutes per test
 
