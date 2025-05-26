@@ -1,4 +1,4 @@
-Fresh install
+#Fresh install
 git clone https://github.com/Mola-TT/postgreSQL-Server.git
 cd postgreSQL-Server
 nano conf/user.env
@@ -10,7 +10,7 @@ sudo ./init.sh
 
 
 
-Pull from remote regardless of changes
+#Pull from remote regardless of changes
 git fetch origin
 git reset --hard origin/master
 chmod +x init.sh
