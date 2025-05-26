@@ -5,7 +5,49 @@ alwaysApply: true
 ---
 # Milestone
 
-# Milestone
+## Milestone 8 (Completed)
+- Created `pg_user_monitor.sh` under setup folder that:
+  - Implements automatic PostgreSQL user synchronization with pgbouncer userlist
+  - Monitors PostgreSQL user changes in real-time (creation, deletion, password changes)
+  - Automatically updates pgbouncer userlist.txt with SCRAM-SHA-256 password hashes
+  - Runs as a systemd service with configurable monitoring intervals
+  - Handles user login privilege changes (excludes NOLOGIN users from userlist)
+  - Provides robust error handling and graceful fallback mechanisms
+  - Implements atomic file operations to prevent userlist corruption
+  - Generates clean userlist files without comment headers (pgbouncer compatibility)
+  - Supports JSON-based state management for change detection
+  - Includes automatic pgbouncer reload after userlist updates
+- Enhanced pgbouncer userlist management:
+  - Resolved pgbouncer "broken auth file" errors caused by comment headers
+  - Implemented proper file permissions (600) for enhanced security
+  - Added duplicate entry prevention and cleanup mechanisms
+  - Ensured consistent SCRAM-SHA-256 password hash format
+  - Fixed authentication issues that caused "SASL authentication failed" errors
+- Created comprehensive test script (`test_pg_user_monitor.sh`) to validate:
+  - Service installation and systemd integration
+  - User creation, modification, and deletion detection
+  - Password change synchronization
+  - Non-login user handling (proper exclusion from userlist)
+  - pgbouncer reload functionality
+  - Log file creation and state file management
+  - Service restart and recovery capabilities
+- Updated environment configuration:
+  - Added PostgreSQL user monitor settings to default.env and user.env.template
+  - Added configurable monitoring interval (PG_USER_MONITOR_INTERVAL)
+  - Added log path configuration (PG_USER_MONITOR_LOG_PATH)
+  - Added service name configuration for flexibility
+- Enhanced connection testing:
+  - Fixed temporary user authentication tests in test_pg_connection.sh
+  - Resolved IPv6 vs IPv4 connectivity issues
+  - Implemented comprehensive SSL mode testing (require, prefer, allow, disable)
+  - Added proper cleanup and service management during tests
+  - Removed verbose debug output for cleaner test logs
+- Improved system integration:
+  - Updated init.sh to include PostgreSQL user monitor setup
+  - Integrated with existing backup, monitoring, and optimization systems
+  - Ensured compatibility with all previous milestone features
+  - Added proper service dependencies and startup ordering
+
 ## Milestone 7 (Completed)
 - Created `backup_config.sh` under setup folder that:
   - Implemented automated PostgreSQL database backups
