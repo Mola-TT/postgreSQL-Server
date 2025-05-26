@@ -343,15 +343,8 @@ test_temp_user_connection() {
         return 1
     fi
 
-    # Temporarily stop pg_user_monitor to prevent interference during the test
-    local monitor_was_running=false
-    if systemctl is-active --quiet pg-user-monitor 2>/dev/null; then
-        monitor_was_running=true
-        log_info "Temporarily stopping pg_user_monitor service to prevent interference during test"
-        execute_silently "sudo systemctl stop pg-user-monitor" \
-            "Stopped pg_user_monitor service" \
-            "Failed to stop pg_user_monitor service"
-    fi
+    # Note: pg_user_monitor no longer interferes with manual userlist entries
+    # The service now generates clean userlist files without comment headers
     
     # Extract password hash and add to userlist manually for testing
     log_info "Adding temporary user to pgbouncer userlist for testing..."
@@ -500,13 +493,7 @@ test_temp_user_connection() {
         "" \
         "Failed to remove temporary test user" || log_warn "Could not remove temporary test user, manual cleanup needed"
     
-    # Restart pg_user_monitor service if it was running before
-    if [ "$monitor_was_running" = true ]; then
-        log_info "Restarting pg_user_monitor service"
-        execute_silently "sudo systemctl start pg-user-monitor" \
-            "Restarted pg_user_monitor service" \
-            "Failed to restart pg_user_monitor service"
-    fi
+    # pg_user_monitor service continues running normally
     
     # Return success or failure
     if [ "$pgbouncer_success" = true ]; then
