@@ -217,8 +217,8 @@ create_database() {
 create_admin_user() {
     log_info "Creating admin user '$ADMIN_USER' with database-specific privileges..."
     
-    # Create the admin user
-    PGPASSWORD="$PG_SUPERUSER_PASS" psql -h localhost -p "$DB_PORT" -U "$PG_SUPERUSER" -d postgres -q >/dev/null 2>&1 <<EOF
+    # Create the admin user (temporarily showing output for debugging)
+    PGPASSWORD="$PG_SUPERUSER_PASS" psql -h localhost -p "$DB_PORT" -U "$PG_SUPERUSER" -d postgres <<EOF
 -- Create admin user with no inheritance and no default database access
 CREATE ROLE "$ADMIN_USER" WITH LOGIN PASSWORD '$ADMIN_PASSWORD' NOINHERIT NOCREATEDB NOCREATEROLE;
 
@@ -239,20 +239,34 @@ DECLARE
     db_record RECORD;
     sql_cmd TEXT;
 BEGIN
+    -- Debug: Show what databases we're processing
+    RAISE NOTICE 'Processing databases for user: $ADMIN_USER';
+    
     FOR db_record IN 
         SELECT datname FROM pg_database 
         WHERE datname != '$NEW_DATABASE'
         AND datistemplate = false
     LOOP
+        RAISE NOTICE 'Revoking privileges from database: %', db_record.datname;
+        
         sql_cmd := format('REVOKE ALL ON DATABASE %I FROM %I', db_record.datname, '$ADMIN_USER');
+        RAISE NOTICE 'Executing: %', sql_cmd;
         EXECUTE sql_cmd;
+        
         sql_cmd := format('REVOKE CONNECT ON DATABASE %I FROM %I', db_record.datname, '$ADMIN_USER');  
+        RAISE NOTICE 'Executing: %', sql_cmd;
         EXECUTE sql_cmd;
+        
+        -- Verify the revoke worked
+        IF has_database_privilege('$ADMIN_USER', db_record.datname, 'CONNECT') THEN
+            RAISE NOTICE 'WARNING: User still has CONNECT privilege on %', db_record.datname;
+        ELSE
+            RAISE NOTICE 'SUCCESS: CONNECT privilege revoked from %', db_record.datname;
+        END IF;
     END LOOP;
 EXCEPTION
     WHEN others THEN
-        -- If any revoke fails, continue
-        NULL;
+        RAISE NOTICE 'ERROR in revoke loop: %', SQLERRM;
 END;
 \$\$;
 
