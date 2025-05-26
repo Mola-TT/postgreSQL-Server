@@ -219,31 +219,11 @@ create_admin_user() {
     
     # Create the admin user
     PGPASSWORD="$PG_SUPERUSER_PASS" psql -h localhost -p "$DB_PORT" -U "$PG_SUPERUSER" -d postgres -q >/dev/null 2>&1 <<EOF
--- Create admin user
-CREATE ROLE "$ADMIN_USER" WITH LOGIN PASSWORD '$ADMIN_PASSWORD';
+-- Create admin user with no inheritance to avoid default role privileges
+CREATE ROLE "$ADMIN_USER" WITH LOGIN PASSWORD '$ADMIN_PASSWORD' NOINHERIT;
 
 -- Grant connection to the specific database only
 GRANT CONNECT ON DATABASE "$NEW_DATABASE" TO "$ADMIN_USER";
-
--- Revoke connect privileges from other databases (including default ones)
-REVOKE CONNECT ON DATABASE postgres FROM "$ADMIN_USER";
-REVOKE CONNECT ON DATABASE template1 FROM "$ADMIN_USER";
-
--- Also revoke default public CONNECT privileges that may exist
-DO \$\$
-DECLARE
-    db_record RECORD;
-BEGIN
-    -- Get all databases except the target database
-    FOR db_record IN 
-        SELECT datname FROM pg_database 
-        WHERE datname NOT IN ('$NEW_DATABASE') 
-        AND datname NOT LIKE 'template%'
-    LOOP
-        EXECUTE format('REVOKE CONNECT ON DATABASE %I FROM %I', db_record.datname, '$ADMIN_USER');
-    END LOOP;
-END;
-\$\$;
 
 -- Grant usage on public schema (required for most operations)
 \c "$NEW_DATABASE"
@@ -267,8 +247,28 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON SEQUENCES TO "
 -- Admin can create roles but cannot grant superuser or replication privileges
 ALTER ROLE "$ADMIN_USER" CREATEROLE;
 
--- Prevent admin from accessing other databases by revoking default public connect privileges
--- (This is done implicitly by only granting CONNECT on the specific database)
+-- Explicitly revoke CONNECT privileges from other databases
+-- This is necessary because the PUBLIC role often has default CONNECT privileges
+DO \$\$
+DECLARE
+    db_record RECORD;
+BEGIN
+    -- Revoke CONNECT from all databases except our target database
+    FOR db_record IN 
+        SELECT datname FROM pg_database 
+        WHERE datname != '$NEW_DATABASE' 
+        AND datistemplate = false
+    LOOP
+        BEGIN
+            EXECUTE format('REVOKE CONNECT ON DATABASE %I FROM %I', db_record.datname, '$ADMIN_USER');
+        EXCEPTION
+            WHEN insufficient_privilege THEN
+                -- Ignore if we don't have permission to revoke
+                NULL;
+        END;
+    END LOOP;
+END;
+\$\$;
 
 -- Note: Event triggers for CREATE ROLE are not supported in PostgreSQL
 -- User creation restrictions will be enforced through privilege management
@@ -289,6 +289,26 @@ configure_role_restrictions() {
     PGPASSWORD="$PG_SUPERUSER_PASS" psql -h localhost -p "$DB_PORT" -U "$PG_SUPERUSER" -d "$NEW_DATABASE" -q >/dev/null 2>&1 <<EOF
 -- Ensure admin cannot become superuser or have replication privileges
 ALTER ROLE "$ADMIN_USER" NOSUPERUSER NOREPLICATION;
+
+-- Additional security: Revoke any remaining CONNECT privileges from other databases
+DO \$\$
+DECLARE
+    db_record RECORD;
+BEGIN
+    FOR db_record IN 
+        SELECT datname FROM pg_database 
+        WHERE datname != '$NEW_DATABASE'
+    LOOP
+        BEGIN
+            EXECUTE format('REVOKE CONNECT ON DATABASE %I FROM %I', db_record.datname, '$ADMIN_USER');
+        EXCEPTION
+            WHEN insufficient_privilege OR undefined_object THEN
+                -- Ignore errors for privileges that don't exist
+                NULL;
+        END;
+    END LOOP;
+END;
+\$\$;
 
 -- Set connection limit if needed (optional)
 -- ALTER ROLE "$ADMIN_USER" CONNECTION LIMIT 10;
@@ -336,10 +356,23 @@ run_tests() {
     
     # Test 2: Admin user cannot connect to other databases (postgres db)
     log_info "Test 2: Admin user database isolation..."
+    # First, let's check what privileges the user actually has
+    log_info "Checking current database privileges for $ADMIN_USER..."
+    PGPASSWORD="$PG_SUPERUSER_PASS" psql -h localhost -p "$DB_PORT" -U "$PG_SUPERUSER" -d postgres -c "
+        SELECT d.datname, has_database_privilege('$ADMIN_USER', d.datname, 'CONNECT') as can_connect
+        FROM pg_database d 
+        WHERE d.datistemplate = false 
+        ORDER BY d.datname;" 2>/dev/null || true
+    
     if test_pg_connection "$ADMIN_USER" "$ADMIN_PASSWORD" "postgres" "failure"; then
         log_pass "✓ Admin user properly restricted from 'postgres' database"
     else
         log_error "✗ Admin user can access 'postgres' database (security issue)"
+        log_error "Debug: Checking why user can still connect..."
+        # Show what grants exist
+        PGPASSWORD="$PG_SUPERUSER_PASS" psql -h localhost -p "$DB_PORT" -U "$PG_SUPERUSER" -d postgres -c "
+            SELECT 'postgres' as database, 'CONNECT' as privilege, 
+                   has_database_privilege('$ADMIN_USER', 'postgres', 'CONNECT') as has_privilege;" 2>/dev/null || true
         return 1
     fi
     
