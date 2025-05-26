@@ -5,8 +5,8 @@ alwaysApply: true
 ---
 # Milestone
 
-## Milestone 10 (In Progress)
-- Create `create_database.sh` under tools folder that:
+## Milestone 10 (Completed)
+- Created `create_database.sh` under tools folder that:
   - Automates the creation of new PostgreSQL databases with dedicated admin users
   - Implements interactive prompts for database creation credentials
   - Uses createdb command for database creation: `createdb -d "name_of_database"`
@@ -22,7 +22,7 @@ alwaysApply: true
   - Create admin user with access only to the newly created database
   - Grant full privileges (CREATE, CONNECT, TEMP, etc.) on target database
   - Enable admin to create users within the specific database only
-  - Restrict admin from accessing or viewing other databases
+  - Restrict admin from accessing or viewing other databases through PUBLIC role privilege management
   - Prevent admin from creating users with elevated privileges
 - User management by database admin:
   - Users created by admin can only access the specific database
@@ -30,16 +30,21 @@ alwaysApply: true
   - Users inherit rights from admin, scoped to database only
   - Implement proper role hierarchy and privilege inheritance
 - Testing and validation:
-  - Integrate comprehensive testing within the same `create_database.sh` script
+  - Integrated comprehensive testing within the same `create_database.sh` script (8 test scenarios)
   - Test admin user privilege restrictions and scope after creation
   - Verify user creation capabilities and limitations
   - Test database isolation and access controls
   - Validate proper privilege inheritance for created users
 - Security and compliance:
-  - Implement secure credential handling during interactive prompts
-  - Ensure proper role-based access control (RBAC)
-  - Validate database privilege isolation
-  - Create audit logging for database and user creation activities
+  - Implemented secure credential handling during interactive prompts
+  - Ensured proper role-based access control (RBAC)
+  - Validated database privilege isolation by revoking PUBLIC CONNECT privileges
+  - Created audit logging for database and user creation activities
+- Advanced privilege management:
+  - Fixed database isolation by identifying and addressing PUBLIC role privileges
+  - Implemented NOINHERIT flag to prevent default role inheritance
+  - Added comprehensive privilege revocation and selective re-granting
+  - Maintained system functionality while enforcing strict database isolation
 
 ## Milestone 9 (Completed)
 - Created `disaster_recovery.sh` under setup folder that:
