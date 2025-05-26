@@ -4,7 +4,8 @@ cd postgreSQL-Server
 nano conf/user.env
 
 chmod +x init.sh
-chmod +x ./tools/collect_log.sh
+chmod +x ./tools/*.sh
+chmod +x ./test/*.sh
 clear
 sudo ./init.sh
 
@@ -14,7 +15,7 @@ sudo ./init.sh
 git fetch origin
 git reset --hard origin/master
 chmod +x init.sh
-chmod +x ./tools/collect_log.sh
-chmod +x ./test/run_tests.sh
+chmod +x ./tools/*.sh
+chmod +x ./test/*.sh
 clear
 sudo ./init.sh
