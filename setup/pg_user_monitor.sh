@@ -289,15 +289,12 @@ try:
     updated = False
     total_changes = len(changes['added']) + len(changes['modified']) + len(changes['deleted'])
     
-    print(f'Processing {total_changes} total changes', file=sys.stderr)
-    
     # Handle deleted users
     for user in changes['deleted']:
         username = user['username']
         if username in userlist_entries:
             del userlist_entries[username]
             updated = True
-            print(f'Removed user: {username}', file=sys.stderr)
     
     # Handle added and modified users
     for user in changes['added'] + changes['modified']:
@@ -308,12 +305,10 @@ try:
             if username in userlist_entries:
                 del userlist_entries[username]
                 updated = True
-                print(f'Removed non-login user: {username}', file=sys.stderr)
             continue
         
         # Skip users without password hash
         if not user['password_hash']:
-            print(f'Skipping user {username} - no password hash', file=sys.stderr)
             continue
         
         # For SCRAM-SHA-256, use the hash directly from PostgreSQL
@@ -323,31 +318,21 @@ try:
             password_hash = user['password_hash']
         else:
             # For plain auth, we would need the plain password which we don't have
-            print(f'Skipping user {username} - unsupported auth type: $auth_type', file=sys.stderr)
             continue
         
         # Update userlist entry
         userlist_entries[username] = password_hash
         updated = True
-        
-        action = 'Added' if user in changes['added'] else 'Updated'
-        print(f'{action} user: {username}', file=sys.stderr)
     
     # Always write the userlist file to ensure proper format (no headers - pgbouncer doesn't like comments)
     with open('$temp_userlist', 'w') as f:
         for username, password_hash in sorted(userlist_entries.items()):
             f.write(f'\"{username}\" \"{password_hash}\"\\n')
     
-    if total_changes == 0:
-        print('No changes to process, but userlist file updated with proper format', file=sys.stderr)
-    
     # Exit with code indicating if updates were made
     sys.exit(0 if updated else 1)
     
 except Exception as e:
-    print(f'Error updating userlist: {e}', file=sys.stderr)
-    import traceback
-    traceback.print_exc(file=sys.stderr)
     sys.exit(2)
 " 2>&1
 
@@ -592,22 +577,17 @@ try:
     if users is None:
         users = []
     
-    print(f'Found {len(users)} users from PostgreSQL', file=sys.stderr)
-    
     # Read existing users from file
     existing_users = []
     if os.path.exists('$existing_users_file'):
         with open('$existing_users_file', 'r') as f:
             existing_users = [line.strip() for line in f if line.strip()]
     
-    print(f'Found {len(existing_users)} existing users in userlist', file=sys.stderr)
-    
     # Only add users that are not already in the userlist
     new_users = []
     for user in users:
         if user.get('can_login', False) and user.get('password_hash', '') and user.get('username', '') not in existing_users:
             new_users.append(user)
-            print(f'Will add new user: {user.get(\"username\", \"unknown\")}', file=sys.stderr)
     
     changes = {
         'added': new_users,
@@ -615,18 +595,11 @@ try:
         'deleted': []
     }
     
-    print(f'Creating changes file with {len(new_users)} new users', file=sys.stderr)
-    
     with open('${temp_state_file}.changes', 'w') as f:
         json.dump(changes, f, indent=2)
-    
-    print('Changes file created successfully', file=sys.stderr)
     sys.exit(0)
     
 except Exception as e:
-    print(f'Error creating initial changes: {e}', file=sys.stderr)
-    import traceback
-    traceback.print_exc(file=sys.stderr)
     sys.exit(1)
 "
 

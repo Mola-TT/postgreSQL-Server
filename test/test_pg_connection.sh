@@ -371,21 +371,9 @@ test_temp_user_connection() {
         log_info "Waiting for pgbouncer to process userlist changes..."
         sleep 3
         
-        # Debug: Show what's actually in the userlist for the temporary user
-        log_info "Debug: Checking userlist entry for temporary user..."
-        if sudo grep -q "\"$temp_user\"" /etc/pgbouncer/userlist.txt 2>/dev/null; then
-            temp_user_line=$(sudo grep "\"$temp_user\"" /etc/pgbouncer/userlist.txt 2>/dev/null || echo "Not found")
-            log_info "Debug: Temporary user userlist entry: $temp_user_line"
-            
-            # Also check what PostgreSQL has for this user
-            pg_hash=$(su - postgres -c "psql -t -A -c \"SELECT rolpassword FROM pg_authid WHERE rolname='$temp_user';\"" 2>/dev/null | tr -d '\n\r' || echo "Not found")
-            log_info "Debug: PostgreSQL password hash for temp user: $pg_hash"
-            
-            # Compare with postgres user entry for reference
-            postgres_user_line=$(sudo grep "\"postgres\"" /etc/pgbouncer/userlist.txt 2>/dev/null || echo "Not found")
-            log_info "Debug: postgres user userlist entry: $postgres_user_line"
-        else
-            log_warn "Debug: Temporary user not found in userlist file"
+        # Verify user was added to userlist successfully
+        if ! sudo grep -q "\"$temp_user\"" /etc/pgbouncer/userlist.txt 2>/dev/null; then
+            log_warn "Temporary user not found in userlist file"
         fi
     else
         log_warn "Could not extract valid password hash for temporary user: $password_hash"
