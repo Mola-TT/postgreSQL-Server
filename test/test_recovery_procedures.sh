@@ -58,9 +58,15 @@ test_service_installation() {
     return 1
   fi
   
-  # Test script execution
-  if ! bash "$RECOVERY_SCRIPT" --help >/dev/null 2>&1; then
-    log_error "Disaster recovery script is not executable or has syntax errors"
+  # Test script execution by checking syntax
+  if ! bash -n "$RECOVERY_SCRIPT" 2>/dev/null; then
+    log_error "Disaster recovery script has syntax errors"
+    return 1
+  fi
+  
+  # Test script execution with status command
+  if ! bash "$RECOVERY_SCRIPT" status >/dev/null 2>&1; then
+    log_error "Disaster recovery script is not executable or cannot run status command"
     return 1
   fi
   
