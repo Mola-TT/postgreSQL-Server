@@ -205,7 +205,7 @@ create_database() {
     log_info "Creating database '$NEW_DATABASE'..."
     
     # Use createdb command as specified in requirements
-    if PGPASSWORD="$PG_SUPERUSER_PASS" createdb -h localhost -p "$DB_PORT" -U "$PG_SUPERUSER" -O "$PG_SUPERUSER" "$NEW_DATABASE"; then
+    if PGPASSWORD="$PG_SUPERUSER_PASS" createdb -h localhost -p "$DB_PORT" -U "$PG_SUPERUSER" -O "$PG_SUPERUSER" "$NEW_DATABASE" >/dev/null 2>&1; then
         log_pass "Database '$NEW_DATABASE' created successfully"
     else
         log_error "Failed to create database '$NEW_DATABASE'"
@@ -218,12 +218,32 @@ create_admin_user() {
     log_info "Creating admin user '$ADMIN_USER' with database-specific privileges..."
     
     # Create the admin user
-    PGPASSWORD="$PG_SUPERUSER_PASS" psql -h localhost -p "$DB_PORT" -U "$PG_SUPERUSER" -d postgres <<EOF
+    PGPASSWORD="$PG_SUPERUSER_PASS" psql -h localhost -p "$DB_PORT" -U "$PG_SUPERUSER" -d postgres -q >/dev/null 2>&1 <<EOF
 -- Create admin user
 CREATE ROLE "$ADMIN_USER" WITH LOGIN PASSWORD '$ADMIN_PASSWORD';
 
 -- Grant connection to the specific database only
 GRANT CONNECT ON DATABASE "$NEW_DATABASE" TO "$ADMIN_USER";
+
+-- Revoke connect privileges from other databases (including default ones)
+REVOKE CONNECT ON DATABASE postgres FROM "$ADMIN_USER";
+REVOKE CONNECT ON DATABASE template1 FROM "$ADMIN_USER";
+
+-- Also revoke default public CONNECT privileges that may exist
+DO \$\$
+DECLARE
+    db_record RECORD;
+BEGIN
+    -- Get all databases except the target database
+    FOR db_record IN 
+        SELECT datname FROM pg_database 
+        WHERE datname NOT IN ('$NEW_DATABASE') 
+        AND datname NOT LIKE 'template%'
+    LOOP
+        EXECUTE format('REVOKE CONNECT ON DATABASE %I FROM %I', db_record.datname, '$ADMIN_USER');
+    END LOOP;
+END;
+\$\$;
 
 -- Grant usage on public schema (required for most operations)
 \c "$NEW_DATABASE"
@@ -250,36 +270,8 @@ ALTER ROLE "$ADMIN_USER" CREATEROLE;
 -- Prevent admin from accessing other databases by revoking default public connect privileges
 -- (This is done implicitly by only granting CONNECT on the specific database)
 
--- Create a function to restrict user creation to database scope only
-CREATE OR REPLACE FUNCTION restrict_user_creation() RETURNS event_trigger AS \$\$
-DECLARE
-    obj record;
-    current_db text;
-BEGIN
-    -- Only apply restrictions when not superuser
-    IF NOT current_setting('is_superuser')::boolean THEN
-        current_db := current_database();
-        
-        FOR obj IN SELECT * FROM pg_event_trigger_ddl_commands() WHERE command_tag = 'CREATE ROLE' LOOP
-            -- Grant connect only to current database for newly created users
-            EXECUTE format('GRANT CONNECT ON DATABASE %I TO %I', current_db, obj.object_identity);
-        END LOOP;
-    END IF;
-END;
-\$\$ LANGUAGE plpgsql;
-
--- Create event trigger (only if we're superuser)
-DO \$\$
-BEGIN
-    IF current_setting('is_superuser')::boolean THEN
-        DROP EVENT TRIGGER IF EXISTS restrict_user_creation_trigger;
-        CREATE EVENT TRIGGER restrict_user_creation_trigger
-            ON ddl_command_end
-            WHEN TAG IN ('CREATE ROLE')
-            EXECUTE FUNCTION restrict_user_creation();
-    END IF;
-END;
-\$\$;
+-- Note: Event triggers for CREATE ROLE are not supported in PostgreSQL
+-- User creation restrictions will be enforced through privilege management
 EOF
 
     if [[ $? -eq 0 ]]; then
@@ -294,7 +286,7 @@ EOF
 configure_role_restrictions() {
     log_info "Configuring role inheritance and access restrictions..."
     
-    PGPASSWORD="$PG_SUPERUSER_PASS" psql -h localhost -p "$DB_PORT" -U "$PG_SUPERUSER" -d "$NEW_DATABASE" <<EOF
+    PGPASSWORD="$PG_SUPERUSER_PASS" psql -h localhost -p "$DB_PORT" -U "$PG_SUPERUSER" -d "$NEW_DATABASE" -q >/dev/null 2>&1 <<EOF
 -- Ensure admin cannot become superuser or have replication privileges
 ALTER ROLE "$ADMIN_USER" NOSUPERUSER NOREPLICATION;
 
