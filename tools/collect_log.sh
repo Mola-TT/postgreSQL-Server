@@ -1,7 +1,8 @@
 #!/bin/bash
-# collect_log.sh - Collects logs and diagnostic information for PostgreSQL server troubleshooting
-# Part of Milestone 5
-# This script gathers system, PostgreSQL, pgbouncer, Nginx, and Netdata logs for troubleshooting
+# collect_log.sh - Comprehensive log collection for PostgreSQL server troubleshooting
+# Part of Milestones 1-10
+# This script gathers system, PostgreSQL, pgbouncer, Nginx, Netdata, disaster recovery,
+# user monitoring, optimization, backup, and SSL certificate logs for troubleshooting
 
 # Exit immediately if a command exits with a non-zero status
 set -e
@@ -117,6 +118,51 @@ collect_logs() {
       log_warn "Failed to collect server init log"
   else
     log_warn "Server init log not found at $SERVER_INIT_LOG"
+  fi
+  
+  # Collect new milestone-specific logs
+  log_info "Collecting milestone-specific logs..."
+  mkdir -p "$OUTPUT_DIR/system/logs/milestones"
+  
+  # Milestone 8: PostgreSQL User Monitor logs
+  if [ -f "/var/log/pg-user-monitor.log" ]; then
+    cp "/var/log/pg-user-monitor.log" "$OUTPUT_DIR/system/logs/milestones/" || \
+      log_warn "Failed to collect pg-user-monitor.log"
+  fi
+  
+  # Milestone 9: Disaster Recovery logs
+  if [ -f "/var/log/disaster-recovery.log" ]; then
+    cp "/var/log/disaster-recovery.log" "$OUTPUT_DIR/system/logs/milestones/" || \
+      log_warn "Failed to collect disaster-recovery.log"
+  fi
+  
+  # Milestone 5: SSL Renewal logs
+  if [ -f "/var/log/letsencrypt-renewal.log" ]; then
+    cp "/var/log/letsencrypt-renewal.log" "$OUTPUT_DIR/system/logs/milestones/" || \
+      log_warn "Failed to collect letsencrypt-renewal.log"
+  fi
+  
+  # Milestone 10: Database Creation logs
+  if [ -f "/var/log/create_database.log" ]; then
+    cp "/var/log/create_database.log" "$OUTPUT_DIR/system/logs/milestones/" || \
+      log_warn "Failed to collect create_database.log"
+  fi
+  
+  if [ -f "/var/log/database_creation_audit.log" ]; then
+    cp "/var/log/database_creation_audit.log" "$OUTPUT_DIR/system/logs/milestones/" || \
+      log_warn "Failed to collect database_creation_audit.log"
+  fi
+  
+  # Email system logs
+  if [ -f "/var/log/msmtp.log" ]; then
+    cp "/var/log/msmtp.log" "$OUTPUT_DIR/system/logs/milestones/" || \
+      log_warn "Failed to collect msmtp.log"
+  fi
+  
+  # Test logs
+  if [ -f "/var/log/reboot-test.log" ]; then
+    cp "/var/log/reboot-test.log" "$OUTPUT_DIR/system/logs/milestones/" || \
+      log_warn "Failed to collect reboot-test.log"
   fi
   
   # PostgreSQL logs and config
@@ -276,6 +322,58 @@ collect_logs() {
     log_warn "Netdata config directory not found at /etc/netdata"
   fi
   
+  # Hardware and optimization data
+  log_info "Collecting hardware and optimization information..."
+  mkdir -p "$OUTPUT_DIR/hardware"
+  mkdir -p "$OUTPUT_DIR/optimization"
+  
+  # Hardware specifications and state files
+  if [ -f "/var/lib/postgresql/hardware_specs.json" ]; then
+    cp "/var/lib/postgresql/hardware_specs.json" "$OUTPUT_DIR/hardware/" || \
+      log_warn "Failed to collect hardware_specs.json"
+  fi
+  
+  if [ -f "/var/lib/postgresql/previous_hardware_specs.json" ]; then
+    cp "/var/lib/postgresql/previous_hardware_specs.json" "$OUTPUT_DIR/hardware/" || \
+      log_warn "Failed to collect previous_hardware_specs.json"
+  fi
+  
+  if [ -f "/var/lib/postgresql/hardware_changes.txt" ]; then
+    cp "/var/lib/postgresql/hardware_changes.txt" "$OUTPUT_DIR/hardware/" || \
+      log_warn "Failed to collect hardware_changes.txt"
+  fi
+  
+  # State files
+  log_info "Collecting state files..."
+  mkdir -p "$OUTPUT_DIR/state"
+  
+  if [ -f "/var/lib/postgresql/user_monitor_state.json" ]; then
+    cp "/var/lib/postgresql/user_monitor_state.json" "$OUTPUT_DIR/state/" || \
+      log_warn "Failed to collect user_monitor_state.json"
+  fi
+  
+  if [ -f "/var/lib/postgresql/disaster_recovery_state.json" ]; then
+    cp "/var/lib/postgresql/disaster_recovery_state.json" "$OUTPUT_DIR/state/" || \
+      log_warn "Failed to collect disaster_recovery_state.json"
+  fi
+  
+  # Optimization reports
+  if [ -d "/var/lib/postgresql/optimization_reports" ]; then
+    cp -r "/var/lib/postgresql/optimization_reports" "$OUTPUT_DIR/optimization/" 2>/dev/null || \
+      log_warn "Failed to collect optimization reports directory"
+  fi
+  
+  # Configuration backups
+  if [ -d "/var/lib/postgresql/config_backups" ]; then
+    # Copy only the most recent 5 backup directories to avoid huge archive
+    mkdir -p "$OUTPUT_DIR/optimization/config_backups"
+    find "/var/lib/postgresql/config_backups" -mindepth 1 -maxdepth 1 -type d | sort -r | head -n 5 | while read -r backup_dir; do
+      backup_name=$(basename "$backup_dir")
+      cp -r "$backup_dir" "$OUTPUT_DIR/optimization/config_backups/" 2>/dev/null || \
+        log_warn "Failed to collect config backup: $backup_name"
+    done
+  fi
+  
   # SSL certificates
   log_info "Collecting SSL certificate information..."
   mkdir -p "$OUTPUT_DIR/ssl"
@@ -347,6 +445,65 @@ collect_logs() {
       } > "$OUTPUT_DIR/ssl/self_signed_certs.txt" 2>&1 || \
         log_warn "Failed to collect self-signed certificate info"
     fi
+  fi
+  
+  # Service status for all new services
+  log_info "Collecting service status information..."
+  mkdir -p "$OUTPUT_DIR/services"
+  
+  # Collect systemd service status for all milestone services
+  local services=(
+    "postgresql"
+    "pgbouncer" 
+    "nginx"
+    "netdata"
+    "pg-user-monitor"
+    "disaster-recovery"
+    "certbot.timer"
+    "pg-full-optimization.timer"
+  )
+  
+  for service in "${services[@]}"; do
+    {
+      echo "=== Service Status: $service ==="
+      systemctl status "$service" 2>/dev/null || echo "Service $service not found or not active"
+      echo ""
+      echo "=== Service Logs (last 50 lines): $service ==="
+      journalctl -u "$service" -n 50 --no-pager 2>/dev/null || echo "No journal logs found for $service"
+      echo ""
+    } > "$OUTPUT_DIR/services/${service}_status.txt" 2>&1
+  done
+  
+  # Collect timer status
+  {
+    echo "=== Active Timers ==="
+    systemctl list-timers --no-pager 2>/dev/null || echo "Failed to list timers"
+    echo ""
+    echo "=== Failed Units ==="
+    systemctl --failed --no-pager 2>/dev/null || echo "Failed to list failed units"
+  } > "$OUTPUT_DIR/services/timers_and_failed.txt" 2>&1
+  
+  # Backup system information
+  log_info "Collecting backup system information..."
+  mkdir -p "$OUTPUT_DIR/backup"
+  
+  # Backup configuration and schedules
+  if [ -f "/etc/cron.d/postgresql-backup" ]; then
+    cp "/etc/cron.d/postgresql-backup" "$OUTPUT_DIR/backup/" || \
+      log_warn "Failed to collect postgresql-backup cron"
+  fi
+  
+  # List recent backup files (without copying actual backups to avoid size issues)
+  if [ -d "/var/lib/postgresql/backups" ]; then
+    {
+      echo "=== Backup Directory Structure ==="
+      find "/var/lib/postgresql/backups" -type f -name "*.sql*" -o -name "*.gz" -o -name "*.tar*" | head -20 | while read -r backup_file; do
+        ls -lh "$backup_file" 2>/dev/null || echo "Cannot access: $backup_file"
+      done
+      echo ""
+      echo "=== Backup Directory Summary ==="
+      du -sh "/var/lib/postgresql/backups"/* 2>/dev/null || echo "No backup directories found"
+    } > "$OUTPUT_DIR/backup/backup_inventory.txt" 2>&1
   fi
   
   # Create consolidated log file
@@ -427,6 +584,18 @@ create_consolidated_log() {
     echo "Files specifically excluded:"
     echo "  - system/logs/dmesg (excluded as requested)"
     echo "  - system/logs/kern.log (excluded as requested)"
+    echo "  - Large backup files (only inventory included)"
+    echo ""
+    echo "New in this collection (Milestones 1-10):"
+    echo "  - PostgreSQL user monitor logs and state"
+    echo "  - Disaster recovery system logs and state"
+    echo "  - SSL certificate renewal logs"
+    echo "  - Database creation and audit logs"
+    echo "  - Hardware optimization reports and specifications"
+    echo "  - Email system logs (msmtp)"
+    echo "  - Service status for all milestone services"
+    echo "  - Backup system configuration and inventory"
+    echo "  - Configuration backups from optimization changes"
     echo ""
     echo "All comments have been removed from configuration files."
     echo ""
