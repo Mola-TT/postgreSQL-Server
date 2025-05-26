@@ -217,8 +217,8 @@ create_database() {
 create_admin_user() {
     log_info "Creating admin user '$ADMIN_USER' with database-specific privileges..."
     
-    # Create the admin user (temporarily showing output for debugging)
-    PGPASSWORD="$PG_SUPERUSER_PASS" psql -h localhost -p "$DB_PORT" -U "$PG_SUPERUSER" -d postgres <<EOF
+    # Create the admin user with proper database isolation
+    PGPASSWORD="$PG_SUPERUSER_PASS" psql -h localhost -p "$DB_PORT" -U "$PG_SUPERUSER" -d postgres -q >/dev/null 2>&1 <<EOF
 -- Create admin user with no inheritance and no default database access
 CREATE ROLE "$ADMIN_USER" WITH LOGIN PASSWORD '$ADMIN_PASSWORD' NOINHERIT NOCREATEDB NOCREATEROLE;
 
@@ -233,40 +233,65 @@ REVOKE ALL PRIVILEGES ON DATABASE template1 FROM "$ADMIN_USER";
 REVOKE CONNECT ON DATABASE postgres FROM "$ADMIN_USER";
 REVOKE CONNECT ON DATABASE template1 FROM "$ADMIN_USER";
 
--- Use a more comprehensive approach to revoke from all databases
+-- The solution: REVOKE CONNECT from PUBLIC role for other databases, then grant back selectively
 DO \$\$
 DECLARE
     db_record RECORD;
     sql_cmd TEXT;
 BEGIN
-    -- Debug: Show what databases we're processing
-    RAISE NOTICE 'Processing databases for user: $ADMIN_USER';
+    RAISE NOTICE 'Removing PUBLIC CONNECT privileges from other databases for security';
     
     FOR db_record IN 
         SELECT datname FROM pg_database 
         WHERE datname != '$NEW_DATABASE'
         AND datistemplate = false
     LOOP
-        RAISE NOTICE 'Revoking privileges from database: %', db_record.datname;
+        RAISE NOTICE 'Processing database: %', db_record.datname;
         
-        sql_cmd := format('REVOKE ALL ON DATABASE %I FROM %I', db_record.datname, '$ADMIN_USER');
+        -- REVOKE CONNECT from PUBLIC role (this is the key!)
+        sql_cmd := format('REVOKE CONNECT ON DATABASE %I FROM PUBLIC', db_record.datname);
         RAISE NOTICE 'Executing: %', sql_cmd;
         EXECUTE sql_cmd;
         
-        sql_cmd := format('REVOKE CONNECT ON DATABASE %I FROM %I', db_record.datname, '$ADMIN_USER');  
+        -- Grant CONNECT back to postgres superuser to maintain system functionality
+        sql_cmd := format('GRANT CONNECT ON DATABASE %I TO postgres', db_record.datname);
         RAISE NOTICE 'Executing: %', sql_cmd;
         EXECUTE sql_cmd;
         
-        -- Verify the revoke worked
+        -- Grant CONNECT back to the database's original admin if it exists
+        IF db_record.datname = 'postgres' THEN
+            -- For postgres database, also grant to netdata user if it exists
+            BEGIN
+                EXECUTE format('GRANT CONNECT ON DATABASE %I TO netdata', db_record.datname);
+                RAISE NOTICE 'Granted CONNECT back to netdata for %', db_record.datname;
+            EXCEPTION
+                WHEN undefined_object THEN
+                    RAISE NOTICE 'netdata user does not exist, skipping';
+            END;
+        ELSE
+            -- For other databases, grant back to their admin users
+            DECLARE
+                admin_user_name TEXT := db_record.datname || '_admin';
+            BEGIN
+                sql_cmd := format('GRANT CONNECT ON DATABASE %I TO %I', db_record.datname, admin_user_name);
+                EXECUTE sql_cmd;
+                RAISE NOTICE 'Granted CONNECT back to % for %', admin_user_name, db_record.datname;
+            EXCEPTION
+                WHEN undefined_object THEN
+                    RAISE NOTICE 'Admin user % does not exist for %, skipping', admin_user_name, db_record.datname;
+            END;
+        END IF;
+        
+        -- Verify our admin user no longer has access
         IF has_database_privilege('$ADMIN_USER', db_record.datname, 'CONNECT') THEN
             RAISE NOTICE 'WARNING: User still has CONNECT privilege on %', db_record.datname;
         ELSE
-            RAISE NOTICE 'SUCCESS: CONNECT privilege revoked from %', db_record.datname;
+            RAISE NOTICE 'SUCCESS: CONNECT privilege removed from % for %', '$ADMIN_USER', db_record.datname;
         END IF;
     END LOOP;
 EXCEPTION
     WHEN others THEN
-        RAISE NOTICE 'ERROR in revoke loop: %', SQLERRM;
+        RAISE NOTICE 'ERROR in privilege management: %', SQLERRM;
 END;
 \$\$;
 
