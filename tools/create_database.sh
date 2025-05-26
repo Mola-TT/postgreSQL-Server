@@ -29,29 +29,8 @@ NEW_DATABASE=""
 ADMIN_USER=""
 ADMIN_PASSWORD=""
 
-# Function to securely read password
-read_password() {
-    local prompt="$1"
-    local password=""
-    
-    echo -n "$prompt"
-    while IFS= read -r -s -n1 char; do
-        if [[ -z $char ]]; then
-            echo
-            break
-        elif [[ $char == $'\177' ]]; then
-            if [ ${#password} -gt 0 ]; then
-                password="${password%?}"
-                echo -ne '\b \b'
-            fi
-        else
-            password+="$char"
-            echo -n '*'
-        fi
-    done
-    
-    echo "$password"
-}
+# Function to securely read password (using built-in read -s for better compatibility)
+# Note: Using read -s instead of custom character-by-character reading for better shell compatibility
 
 # Function to validate database name
 validate_database_name() {
@@ -149,7 +128,9 @@ get_credentials() {
     
     # Get PostgreSQL superuser password
     while true; do
-        PG_SUPERUSER_PASS=$(read_password "Enter PostgreSQL superuser password: ")
+        echo -n "Enter PostgreSQL superuser password: "
+        read -s PG_SUPERUSER_PASS
+        echo
         
         if [[ -n "$PG_SUPERUSER_PASS" ]]; then
             # Test connection to validate credentials
@@ -194,7 +175,9 @@ get_credentials() {
     
     # Get admin password
     while true; do
-        ADMIN_PASSWORD=$(read_password "Enter password for admin user '$ADMIN_USER': ")
+        echo -n "Enter password for admin user '$ADMIN_USER': "
+        read -s ADMIN_PASSWORD
+        echo
         
         if [[ ${#ADMIN_PASSWORD} -ge 8 ]]; then
             break
