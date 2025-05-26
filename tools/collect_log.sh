@@ -178,8 +178,22 @@ collect_logs() {
   
   if [ -f "/etc/pgbouncer/userlist.txt" ]; then
     # Copy redacted version to avoid leaking passwords
-    grep -v "^\"" "/etc/pgbouncer/userlist.txt" | grep -v "^#" | grep -v "^$" > "$OUTPUT_DIR/pgbouncer/config/userlist.txt.redacted" 2>/dev/null || \
-      log_warn "Failed to collect redacted userlist.txt"
+    if [ -s "/etc/pgbouncer/userlist.txt" ]; then
+      # File exists and is not empty
+      {
+        echo "# pgbouncer userlist - passwords redacted for security"
+        echo "# Format: \"username\" \"password_hash\""
+        echo "# Number of users configured:"
+        grep -c "^\"" "/etc/pgbouncer/userlist.txt" 2>/dev/null || echo "0"
+        echo "# Users (passwords hidden):"
+        grep "^\"" "/etc/pgbouncer/userlist.txt" 2>/dev/null | sed 's/"[^"]*"$/"[REDACTED]"/' || echo "# No users found"
+      } > "$OUTPUT_DIR/pgbouncer/config/userlist.txt.redacted" 2>/dev/null
+    else
+      # File exists but is empty
+      echo "# pgbouncer userlist is empty" > "$OUTPUT_DIR/pgbouncer/config/userlist.txt.redacted"
+    fi
+  else
+    log_warn "pgbouncer userlist.txt not found"
   fi
   
   # Nginx logs and config
