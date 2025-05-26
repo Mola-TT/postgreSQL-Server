@@ -434,6 +434,51 @@ setup_pg_user_monitor() {
   return $result
 }
 
+# Setup disaster recovery system
+setup_disaster_recovery() {
+  log_info "Setting up disaster recovery system..."
+  
+  # Find the disaster recovery script
+  local script_path=""
+  script_path=$(find_script "disaster_recovery.sh" 2>/dev/null)
+  local find_result=$?
+  
+  if [ $find_result -ne 0 ] || [ -z "$script_path" ]; then
+    log_error "Could not find disaster_recovery.sh"
+    return 1
+  fi
+  
+  # Clean up any potential logging in the path
+  script_path=$(echo "$script_path" | grep -v '^\[' | tail -n 1)
+  log_info "Using disaster_recovery.sh at: $script_path"
+  
+  if [ ! -f "$script_path" ]; then
+    log_error "Script path $script_path does not exist"
+    return 1
+  fi
+  
+  if [ ! -r "$script_path" ]; then
+    log_error "Script path $script_path is not readable"
+    return 1
+  fi
+  
+  # Ensure the script is executable
+  chmod +x "$script_path" 2>/dev/null || log_warn "Failed to set executable permission, will use bash explicitly"
+  
+  log_info "Executing disaster_recovery.sh setup..."
+  # Use bash explicitly to execute the script
+  bash "$script_path" setup
+  local result=$?
+  
+  if [ $result -eq 0 ]; then
+    log_info "Disaster recovery system setup completed successfully"
+  else
+    log_error "Disaster recovery system setup failed with exit code $result"
+  fi
+  
+  return $result
+}
+
 # Main function
 main() {
     display_banner
@@ -538,6 +583,19 @@ main() {
         log_info "Skipping PostgreSQL user monitor setup (PostgreSQL not available)"
     fi
     
+    # Setup disaster recovery system
+    local disaster_recovery_success=false
+    if [ "${DISASTER_RECOVERY_ENABLED:-true}" = true ]; then
+        log_info "Setting up disaster recovery system..."
+        if setup_disaster_recovery; then
+            disaster_recovery_success=true
+        else
+            log_error "Disaster recovery setup encountered issues, but continuing"
+        fi
+    else
+        log_info "Disaster recovery disabled (set DISASTER_RECOVERY_ENABLED=true to enable)"
+    fi
+    
     # Print setup summary
     log_info "-----------------------------------------------"
     log_info "SETUP SUMMARY"
@@ -589,6 +647,12 @@ main() {
         log_info "✓ PostgreSQL user monitor setup: SUCCESS"
     else
         log_error "✗ PostgreSQL user monitor setup: FAILED"
+    fi
+    
+    if [ "$disaster_recovery_success" = true ]; then
+        log_info "✓ Disaster recovery setup: SUCCESS"
+    else
+        log_error "✗ Disaster recovery setup: FAILED"
     fi
     
     log_info "-----------------------------------------------"
