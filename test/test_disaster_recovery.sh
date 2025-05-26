@@ -36,8 +36,30 @@ run_test_with_timeout() {
 
   log_info "Running test: $test_name"
 
-  # Run test with timeout by calling the function directly
-  if timeout "$timeout" bash -c "$(declare -f "$test_function"); $test_function"; then
+  # Export all required functions and variables for the subshell
+  local subshell_script="
+# Source required libraries
+source '$SCRIPT_DIR/../lib/logger.sh'
+source '$SCRIPT_DIR/../lib/utilities.sh'
+
+# Export environment variables
+export DISASTER_RECOVERY_SCRIPT='$DISASTER_RECOVERY_SCRIPT'
+export RECOVERY_SERVICE_NAME='$RECOVERY_SERVICE_NAME'
+export DISASTER_RECOVERY_LOG_PATH='$DISASTER_RECOVERY_LOG_PATH'
+export DISASTER_RECOVERY_STATE_FILE='$DISASTER_RECOVERY_STATE_FILE'
+export DISASTER_RECOVERY_EMAIL_ENABLED='$DISASTER_RECOVERY_EMAIL_ENABLED'
+export DISASTER_RECOVERY_EMAIL_RECIPIENT='$DISASTER_RECOVERY_EMAIL_RECIPIENT'
+export DISASTER_RECOVERY_EMAIL_SENDER='$DISASTER_RECOVERY_EMAIL_SENDER'
+
+# Define the test function
+$(declare -f "$test_function")
+
+# Run the test function
+$test_function
+"
+
+  # Run test with timeout
+  if timeout "$timeout" bash -c "$subshell_script"; then
     log_info "✓ PASS: $test_name"
     return 0
   else

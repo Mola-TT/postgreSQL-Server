@@ -374,7 +374,30 @@ main() {
       
       log_info "Running test: $test_name"
       
-      if timeout "$TEST_TIMEOUT" bash -c "$(declare -f "$test_func"); $test_func"; then
+      # Create subshell script with all required functions and variables
+      local subshell_script="
+# Source required libraries
+source '$SCRIPT_DIR/../lib/logger.sh'
+source '$SCRIPT_DIR/../lib/utilities.sh'
+
+# Export environment variables
+export DISASTER_RECOVERY_SCRIPT='$DISASTER_RECOVERY_SCRIPT'
+export SIMULATION_SCRIPT='$SIMULATION_SCRIPT'
+export RECOVERY_SERVICE_NAME='$RECOVERY_SERVICE_NAME'
+export DISASTER_RECOVERY_EMAIL_ENABLED='$DISASTER_RECOVERY_EMAIL_ENABLED'
+export DISASTER_RECOVERY_EMAIL_RECIPIENT='$DISASTER_RECOVERY_EMAIL_RECIPIENT'
+export DISASTER_RECOVERY_STATE_FILE='$DISASTER_RECOVERY_STATE_FILE'
+export DISASTER_RECOVERY_TIMEOUT='$DISASTER_RECOVERY_TIMEOUT'
+
+# Define all required functions
+$(declare -f ensure_disaster_recovery_running)
+$(declare -f "$test_func")
+
+# Run the test function
+$test_func
+"
+
+      if timeout "$TEST_TIMEOUT" bash -c "$subshell_script"; then
         log_info "✓ PASS: $test_name"
         ((tests_passed++))
       else
@@ -388,7 +411,30 @@ main() {
       
       log_info "Running test: $test_name"
       
-      if timeout "$TEST_TIMEOUT" bash -c "$(declare -f "$test_func"); $test_func '$test_param'"; then
+      # Create subshell script with all required functions and variables
+      local subshell_script="
+# Source required libraries
+source '$SCRIPT_DIR/../lib/logger.sh'
+source '$SCRIPT_DIR/../lib/utilities.sh'
+
+# Export environment variables
+export DISASTER_RECOVERY_SCRIPT='$DISASTER_RECOVERY_SCRIPT'
+export SIMULATION_SCRIPT='$SIMULATION_SCRIPT'
+export RECOVERY_SERVICE_NAME='$RECOVERY_SERVICE_NAME'
+export DISASTER_RECOVERY_EMAIL_ENABLED='$DISASTER_RECOVERY_EMAIL_ENABLED'
+export DISASTER_RECOVERY_EMAIL_RECIPIENT='$DISASTER_RECOVERY_EMAIL_RECIPIENT'
+export DISASTER_RECOVERY_STATE_FILE='$DISASTER_RECOVERY_STATE_FILE'
+export DISASTER_RECOVERY_TIMEOUT='$DISASTER_RECOVERY_TIMEOUT'
+
+# Define all required functions
+$(declare -f ensure_disaster_recovery_running)
+$(declare -f "$test_func")
+
+# Run the test function with parameter
+$test_func '$test_param'
+"
+
+      if timeout "$TEST_TIMEOUT" bash -c "$subshell_script"; then
         log_info "✓ PASS: $test_name"
         ((tests_passed++))
       else
