@@ -488,79 +488,91 @@ optimize_postgresql() {
   
   log_info "PostgreSQL configuration optimized successfully" >&2
   
-  # Reload PostgreSQL to apply changes if not in minimal mode
+  # Apply PostgreSQL configuration changes if not in minimal mode
   if [ "$MINIMAL_MODE" = "false" ]; then
     if systemctl is-active --quiet postgresql; then
-      log_info "Reloading PostgreSQL configuration..." >&2
+      log_info "Applying PostgreSQL configuration changes..." >&2
       
-      # Note: Skipping postgres --check-config validation because:
-      # 1. It expects config files in data directory, but Ubuntu/Debian stores them in /etc/postgresql/
-      # 2. systemctl reload postgresql will validate the configuration anyway
-      # 3. If there are syntax errors, the reload will fail and we'll catch that
-      log_info "Preparing to reload PostgreSQL configuration..." >&2
+      # Check if we need a restart by looking for restart-required parameters
+      local needs_restart=false
+      if grep -q "^shared_buffers\|^max_connections\|^wal_buffers" "$config_file"; then
+        needs_restart=true
+        log_info "Configuration contains parameters that require PostgreSQL restart" >&2
+      fi
       
-      # Clear any previous error states by temporarily removing the config file
-      local temp_backup="${config_file}.temp_backup"
-      mv "$config_file" "$temp_backup"
-      
-      # Reload without the config file first to clear error state
-      systemctl reload postgresql >/dev/null 2>&1
-      sleep 2
-      
-      # Restore the config file
-      mv "$temp_backup" "$config_file"
-      
-      # Now reload with the corrected configuration
-      local reload_output
-      reload_output=$(systemctl reload postgresql 2>&1)
-      local reload_exit_code=$?
-      
-      if [ $reload_exit_code -eq 0 ]; then
-        # Wait a moment for the reload to complete
-        sleep 3
+      if [ "$needs_restart" = "true" ]; then
+        log_info "Restarting PostgreSQL to apply configuration changes..." >&2
+        local restart_output
+        restart_output=$(systemctl restart postgresql 2>&1)
+        local restart_exit_code=$?
         
-        # Verify the configuration was actually applied by checking a key parameter
-        local current_shared_buffers
-        current_shared_buffers=$(su - postgres -c "psql -t -c \"SHOW shared_buffers;\"" 2>/dev/null | grep -v '^$' | tr -d ' ')
-        
-        # Extract expected shared_buffers from our config file
-        local expected_shared_buffers
-        expected_shared_buffers=$(grep "^shared_buffers" "$config_file" | sed "s/.*=[[:space:]]*['\"]\\?\\([^'\"]*\\)['\"]\\?.*/\\1/")
-        
-        if [ "$current_shared_buffers" = "$expected_shared_buffers" ]; then
-          log_info "PostgreSQL configuration reloaded and verified successfully" >&2
-        else
-          log_warn "PostgreSQL reloaded but configuration may not be fully applied" >&2
-          log_warn "Expected shared_buffers: $expected_shared_buffers, Current: $current_shared_buffers" >&2
+        if [ $restart_exit_code -eq 0 ]; then
+          # Wait for PostgreSQL to fully start
+          sleep 5
           
-          # Check for any configuration errors in the logs
+          # Verify PostgreSQL is running and accepting connections
+          local connection_test
+          connection_test=$(su - postgres -c "psql -c 'SELECT 1;'" 2>&1)
+          if echo "$connection_test" | grep -q "1 row"; then
+            log_info "PostgreSQL restarted successfully and is accepting connections" >&2
+            
+            # Verify the configuration was actually applied
+            local current_shared_buffers
+            current_shared_buffers=$(su - postgres -c "psql -t -c \"SHOW shared_buffers;\"" 2>/dev/null | grep -v '^$' | tr -d ' ')
+            
+            # Extract expected shared_buffers from our config file
+            local expected_shared_buffers
+            expected_shared_buffers=$(grep "^shared_buffers" "$config_file" | sed "s/.*=[[:space:]]*['\"]\\?\\([^'\"]*\\)['\"]\\?.*/\\1/")
+            
+            if [ "$current_shared_buffers" = "$expected_shared_buffers" ]; then
+              log_info "PostgreSQL configuration applied and verified successfully" >&2
+              log_info "shared_buffers: $current_shared_buffers (applied successfully)" >&2
+            else
+              log_warn "PostgreSQL restarted but configuration verification failed" >&2
+              log_warn "Expected shared_buffers: $expected_shared_buffers, Current: $current_shared_buffers" >&2
+            fi
+          else
+            log_error "PostgreSQL restarted but is not accepting connections properly" >&2
+            log_error "Connection test output: $connection_test" >&2
+            return 1
+          fi
+        else
+          log_error "Failed to restart PostgreSQL (exit code: $restart_exit_code)" >&2
+          if [ -n "$restart_output" ]; then
+            log_error "Restart output: $restart_output" >&2
+          fi
+          
+          # Check PostgreSQL logs for specific error details
           log_info "Checking PostgreSQL logs for configuration errors..." >&2
           local recent_errors
-          recent_errors=$(journalctl -u postgresql -n 10 --no-pager 2>/dev/null | grep -i "error\|fatal\|contains errors" || echo "No recent errors found")
-          if [ "$recent_errors" != "No recent errors found" ]; then
-            log_warn "Recent PostgreSQL log errors:" >&2
-            echo "$recent_errors" >&2
-          fi
+          recent_errors=$(journalctl -u postgresql -n 10 --no-pager 2>/dev/null | grep -i "error\|fatal" || echo "No recent errors found")
+          log_error "Recent PostgreSQL log errors: $recent_errors" >&2
+          
+          return 1
         fi
       else
-        log_error "Failed to reload PostgreSQL configuration (exit code: $reload_exit_code)" >&2
-        if [ -n "$reload_output" ]; then
-          log_error "Reload output: $reload_output" >&2
+        # Only reload-able parameters, use reload instead of restart
+        log_info "Reloading PostgreSQL configuration (reload-only parameters)..." >&2
+        local reload_output
+        reload_output=$(systemctl reload postgresql 2>&1)
+        local reload_exit_code=$?
+        
+        if [ $reload_exit_code -eq 0 ]; then
+          sleep 2
+          log_info "PostgreSQL configuration reloaded successfully" >&2
+        else
+          log_error "Failed to reload PostgreSQL configuration (exit code: $reload_exit_code)" >&2
+          if [ -n "$reload_output" ]; then
+            log_error "Reload output: $reload_output" >&2
+          fi
+          return 1
         fi
-        
-        # Check PostgreSQL logs for specific error details
-        log_info "Checking PostgreSQL logs for configuration errors..." >&2
-        local recent_errors
-        recent_errors=$(journalctl -u postgresql -n 5 --no-pager 2>/dev/null | grep -i "error\|fatal\|contains errors" || echo "No recent errors found")
-        log_error "Recent PostgreSQL log errors: $recent_errors" >&2
-        
-        return 1
       fi
     else
-      log_warn "PostgreSQL service is not running, skipping reload" >&2
+      log_warn "PostgreSQL service is not running, skipping configuration application" >&2
     fi
   else
-    log_info "Running in minimal mode, skipping PostgreSQL reload" >&2
+    log_info "Running in minimal mode, skipping PostgreSQL configuration application" >&2
   fi
 }
 
