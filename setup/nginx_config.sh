@@ -443,6 +443,84 @@ update_pgbouncer_config() {
   log_info "pgbouncer configuration updated successfully"
 }
 
+# Configure Nginx main configuration with proper log format for Netdata
+configure_nginx_main() {
+  log_info "Configuring main Nginx configuration with Netdata-compatible log format..."
+  
+  local nginx_main_conf="/etc/nginx/nginx.conf"
+  
+  # Back up original nginx.conf if not already done
+  if [ ! -f "${nginx_main_conf}.bak.setup" ]; then
+    cp "$nginx_main_conf" "${nginx_main_conf}.bak.setup" 2>/dev/null
+  fi
+  
+  # Create a new nginx.conf with proper log format for Netdata
+  cat > "$nginx_main_conf" << EOF
+user www-data;
+worker_processes auto;
+pid /run/nginx.pid;
+include /etc/nginx/modules-enabled/*.conf;
+
+events {
+    worker_connections 768;
+    # multi_accept on;
+}
+
+http {
+    ##
+    # Basic Settings
+    ##
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+    # server_tokens off;
+
+    # server_names_hash_bucket_size 64;
+    # server_name_in_redirect off;
+
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    ##
+    # SSL Settings
+    ##
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+
+    ##
+    # Logging Settings - Netdata Compatible Format
+    ##
+    log_format netdata_combined '\$remote_addr - \$remote_user [\$time_local] '
+                                '"\$request" \$status \$body_bytes_sent '
+                                '"\$http_referer" "\$http_user_agent"';
+    
+    access_log /var/log/nginx/access.log netdata_combined;
+    error_log /var/log/nginx/error.log;
+
+    ##
+    # Gzip Settings
+    ##
+    gzip on;
+    # gzip_vary on;
+    # gzip_proxied any;
+    # gzip_comp_level 6;
+    # gzip_buffers 16 8k;
+    # gzip_http_version 1.1;
+    # gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+
+    ##
+    # Virtual Host Configs
+    ##
+    include /etc/nginx/conf.d/*.conf;
+    include /etc/nginx/sites-enabled/*;
+}
+EOF
+
+  log_info "Updated main Nginx configuration with Netdata-compatible log format"
+}
+
 # Main function to install and configure Nginx
 setup_nginx() {
   log_info "Setting up Nginx for subdomain to database mapping..."
@@ -533,6 +611,9 @@ setup_nginx() {
   update_pgbouncer_config && pgbouncer_updated=true || {
     log_warn "Failed to update pgbouncer configuration, functionality may be limited"
   }
+  
+  # Configure Nginx main configuration with proper log format for Netdata
+  configure_nginx_main
   
   # Print setup summary
   log_info "-----------------------------------------------"
