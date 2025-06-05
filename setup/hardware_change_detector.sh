@@ -253,7 +253,7 @@ collect_hardware_specs() {
   else
     total_memory_kb=$(grep MemTotal /proc/meminfo | awk '{print $2}')
   fi
-  total_memory_mb=$((total_memory_kb / 1024))
+  total_memory_mb=$(echo "$total_memory_kb" | awk '{printf "%.2f", $1/1024}')
   
   # Disk Size
   local data_directory
@@ -383,15 +383,15 @@ collect_hardware_specs() {
   
   # Calculate GB from KB with error handling
   if [ -n "$disk_size_kb" ] && [ "$disk_size_kb" -gt 0 ]; then
-    disk_size_gb=$((disk_size_kb / 1024 / 1024))
+    disk_size_gb=$(echo "$disk_size_kb" | awk '{printf "%.2f", $1/1024/1024}')
   else
     # Default to 50GB if detection failed
-    disk_size_gb=50
+    disk_size_gb=50.00
   fi
   
   # Ensure a minimum value
-  if [ "$disk_size_gb" -lt 1 ]; then
-    disk_size_gb=50
+  if [ "$(echo "$disk_size_gb < 1" | bc -l)" = "1" ]; then
+    disk_size_gb=50.00
   fi
   
   # Swap Size
@@ -402,7 +402,7 @@ collect_hardware_specs() {
   else
     swap_size_kb=$(grep SwapTotal /proc/meminfo | awk '{print $2}')
   fi
-  swap_size_mb=$((swap_size_kb / 1024))
+  swap_size_mb=$(echo "$swap_size_kb" | awk '{printf "%.2f", $1/1024}')
   
   # Timestamp
   local timestamp
@@ -459,16 +459,16 @@ compare_hardware_specs() {
   local memory_change=0
   local disk_change=0
   
-  if [ "$previous_cpu_cores" -gt 0 ]; then
-    cpu_change=$(( (current_cpu_cores - previous_cpu_cores) * 100 / previous_cpu_cores ))
+  if [ "$(echo "$previous_cpu_cores > 0" | bc -l)" = "1" ]; then
+    cpu_change=$(echo "scale=2; ($current_cpu_cores - $previous_cpu_cores) * 100 / $previous_cpu_cores" | bc -l)
   fi
   
-  if [ "$previous_memory_mb" -gt 0 ]; then
-    memory_change=$(( (current_memory_mb - previous_memory_mb) * 100 / previous_memory_mb ))
+  if [ "$(echo "$previous_memory_mb > 0" | bc -l)" = "1" ]; then
+    memory_change=$(echo "scale=2; ($current_memory_mb - $previous_memory_mb) * 100 / $previous_memory_mb" | bc -l)
   fi
   
-  if [ "$previous_disk_gb" -gt 0 ]; then
-    disk_change=$(( (current_disk_gb - previous_disk_gb) * 100 / previous_disk_gb ))
+  if [ "$(echo "$previous_disk_gb > 0" | bc -l)" = "1" ]; then
+    disk_change=$(echo "scale=2; ($current_disk_gb - $previous_disk_gb) * 100 / $previous_disk_gb" | bc -l)
   fi
   
   # Create a changes summary file
@@ -487,7 +487,7 @@ compare_hardware_specs() {
   chmod 644 "$changes_file" 2>/dev/null || true
   
   # Determine if significant changes occurred (±10% threshold)
-  if [ "${cpu_change#-}" -ge 10 ] || [ "${memory_change#-}" -ge 10 ] || [ "${disk_change#-}" -ge 10 ]; then
+  if [ "$(echo "${cpu_change#-} >= 10" | bc -l)" = "1" ] || [ "$(echo "${memory_change#-} >= 10" | bc -l)" = "1" ] || [ "$(echo "${disk_change#-} >= 10" | bc -l)" = "1" ]; then
     log_info "Significant hardware changes detected:" >&2
     log_info "CPU Cores: $previous_cpu_cores → $current_cpu_cores (${cpu_change}% change)" >&2
     log_info "Memory: $previous_memory_mb MB → $current_memory_mb MB (${memory_change}% change)" >&2
@@ -743,6 +743,12 @@ main() {
   if ! command -v jq >/dev/null 2>&1; then
     log_info "Installing jq for JSON processing..."
     apt_install_with_retry "jq" 5 30
+  fi
+  
+  # Check if bc is installed (needed for decimal calculations)
+  if ! command -v bc >/dev/null 2>&1; then
+    log_info "Installing bc for decimal calculations..."
+    apt_install_with_retry "bc" 5 30
   fi
   
   # Create directory for specs files
