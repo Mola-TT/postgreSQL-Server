@@ -202,7 +202,6 @@ alarm: cpu_usage_80
     crit: \$this > 90
    delay: up 0 down 5m
     info: CPU utilization over 80%
- options: no-clear-notification
 EOF
   
   # Memory usage alarm
@@ -220,7 +219,6 @@ alarm: ram_usage_80
     crit: \$this > 90
    delay: up 0 down 5m
     info: RAM utilization over 80%
- options: no-clear-notification
 EOF
   
   # Disk usage alarm
@@ -238,7 +236,6 @@ alarm: disk_usage_80
     crit: \$this > 90
    delay: up 0 down 5m
     info: Disk utilization over 80%
- options: no-clear-notification
 EOF
   
   # Restart Netdata to apply new configuration
@@ -290,17 +287,37 @@ server {
 
 EON
   
-  # Certificate paths - use Let's Encrypt paths first, fallback to self-signed
+  # Certificate paths - prioritize Let's Encrypt, check for wildcard certs, fallback to self-signed
+  local cert_found=false
+  
+  # Check for Let's Encrypt certificates (try wildcard first, then specific domain)
   if [ -f "/etc/letsencrypt/live/$domain/fullchain.pem" ]; then
     cat >> "$nginx_conf" << EOC
     ssl_certificate /etc/letsencrypt/live/$domain/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/$domain/privkey.pem;
 EOC
-  else
+    cert_found=true
+    log_info "Using Let's Encrypt certificate for $domain"
+  elif [ -f "/etc/letsencrypt/live/*/fullchain.pem" ]; then
+    # Use any available Let's Encrypt certificate (wildcard support)
+    local cert_dir=$(find /etc/letsencrypt/live -name "fullchain.pem" | head -1 | xargs dirname)
+    if [ -n "$cert_dir" ]; then
+      cat >> "$nginx_conf" << EOC
+    ssl_certificate $cert_dir/fullchain.pem;
+    ssl_certificate_key $cert_dir/privkey.pem;
+EOC
+      cert_found=true
+      log_info "Using available Let's Encrypt certificate from $cert_dir"
+    fi
+  fi
+  
+  # Fallback to self-signed if no Let's Encrypt certificates found
+  if [ "$cert_found" = "false" ]; then
     cat >> "$nginx_conf" << EOC
     ssl_certificate /etc/nginx/ssl/$domain.crt;
     ssl_certificate_key /etc/nginx/ssl/$domain.key;
 EOC
+    log_info "Using self-signed certificate for $domain"
   fi
   
   # Complete the Nginx configuration
