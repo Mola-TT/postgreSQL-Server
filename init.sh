@@ -537,6 +537,10 @@ main() {
     log_info "Setting up Netdata monitoring..."
     if setup_netdata; then
         netdata_success=true
+        
+        # Setup dynamic Netdata configuration
+        log_info "Setting up dynamic Netdata configuration..."
+        execute_script "$SCRIPT_DIR/setup/netdata_dynamic_config.sh" "" "netdata_dynamic_success"
     else
         log_error "Netdata setup encountered issues, but continuing with other setup steps"
     fi
@@ -596,6 +600,15 @@ main() {
         log_info "Disaster recovery disabled (set DISASTER_RECOVERY_ENABLED=true to enable)"
     fi
     
+    # Setup enhanced security monitoring and protection
+    local security_success=false
+    if [ "${SECURITY_ENHANCED_ENABLED:-true}" = true ]; then
+        log_info "Setting up enhanced security monitoring and protection..."
+        execute_script "$SCRIPT_DIR/setup/security_config.sh" "" "security_success"
+    else
+        log_info "Enhanced security disabled (set SECURITY_ENHANCED_ENABLED=true to enable)"
+    fi
+    
     # Print setup summary
     log_info "-----------------------------------------------"
     log_info "SETUP SUMMARY"
@@ -653,6 +666,12 @@ main() {
         log_info "✓ Disaster recovery setup: SUCCESS"
     else
         log_error "✗ Disaster recovery setup: FAILED"
+    fi
+    
+    if [ "$security_success" = true ]; then
+        log_info "✓ Enhanced security setup: SUCCESS"
+    else
+        log_error "✗ Enhanced security setup: FAILED"
     fi
     
     log_info "-----------------------------------------------"
