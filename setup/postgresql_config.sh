@@ -39,10 +39,10 @@ install_postgresql() {
   
   log_info "Adding PostgreSQL repository..."
   
-  # Download PostgreSQL repository key
+  # Download PostgreSQL repository key with improved handling
   log_info "Downloading PostgreSQL repository key..."
-  if ! curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg > /dev/null 2>&1; then
-    log_error "Failed to download PostgreSQL repository key"
+  if ! add_gpg_key_with_timeout "https://www.postgresql.org/media/keys/ACCC4CF8.asc" "/etc/apt/trusted.gpg.d/postgresql.gpg" 30 3; then
+    log_error "Failed to download PostgreSQL repository key after multiple attempts"
     return 1
   fi
   

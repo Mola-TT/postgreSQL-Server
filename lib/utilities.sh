@@ -126,7 +126,13 @@ apt_update_with_retry() {
   local success=false
   
   while [ $retry_count -lt $max_retries ] && [ "$success" = "false" ]; do
-    if apt-get update -qq > "$log_file" 2>&1; then
+    # Clean locks before each attempt
+    if [ $retry_count -gt 0 ]; then
+      clean_apt_locks
+    fi
+    
+    # Try update with timeout
+    if timeout 300 apt-get update -qq > "$log_file" 2>&1; then
       success=true
     else
       # Check if failure was due to lock
@@ -159,6 +165,99 @@ apt_update_with_retry() {
   else
     return 1
   fi
+}
+
+# Clean apt locks and processes
+clean_apt_locks() {
+  log_info "Cleaning apt locks and stuck processes..."
+  
+  # Kill any stuck apt/dpkg processes with timeout
+  timeout 10 pkill -f "apt-get" 2>/dev/null || true
+  timeout 10 pkill -f "dpkg" 2>/dev/null || true
+  timeout 10 pkill -f "gpg.*postgresql" 2>/dev/null || true
+  timeout 10 pkill -f "gpg.*dearmor" 2>/dev/null || true
+  
+  # Wait a moment for processes to terminate
+  sleep 3
+  
+  # Force kill if still running
+  pkill -9 -f "apt-get" 2>/dev/null || true
+  pkill -9 -f "dpkg" 2>/dev/null || true
+  pkill -9 -f "gpg.*postgresql" 2>/dev/null || true
+  
+  # Remove lock files
+  rm -f /var/lib/apt/lists/lock 2>/dev/null || true
+  rm -f /var/cache/apt/archives/lock 2>/dev/null || true
+  rm -f /var/lib/dpkg/lock* 2>/dev/null || true
+  
+  # Fix any interrupted dpkg operations
+  timeout 60 dpkg --configure -a 2>/dev/null || true
+  
+  log_info "Apt locks cleaned"
+}
+
+# Add GPG key with timeout and retry
+add_gpg_key_with_timeout() {
+  local key_url="$1"
+  local key_file="$2"
+  local timeout_duration="${3:-30}"
+  local max_attempts="${4:-3}"
+  
+  log_info "Adding GPG key from $key_url..."
+  
+  for attempt in $(seq 1 $max_attempts); do
+    log_info "GPG key attempt $attempt of $max_attempts..."
+    
+    # Remove existing key file if it exists
+    rm -f "$key_file" 2>/dev/null || true
+    
+    # Try multiple methods to add the key
+    local success=false
+    
+    # Method 1: Direct curl + gpg with timeout
+    if timeout $timeout_duration bash -c "curl -fsSL '$key_url' | gpg --dearmor -o '$key_file'" 2>/dev/null; then
+      if [ -s "$key_file" ]; then
+        success=true
+      fi
+    fi
+    
+    # Method 2: Download then convert if method 1 failed
+    if [ "$success" = "false" ]; then
+      local temp_key="/tmp/temp_key_$$.asc"
+      if timeout $timeout_duration curl -fsSL "$key_url" -o "$temp_key" 2>/dev/null; then
+        if timeout 10 gpg --dearmor "$temp_key" > "$key_file" 2>/dev/null; then
+          if [ -s "$key_file" ]; then
+            success=true
+          fi
+        fi
+      fi
+      rm -f "$temp_key" 2>/dev/null || true
+    fi
+    
+    # Method 3: Use apt-key as fallback
+    if [ "$success" = "false" ]; then
+      if timeout $timeout_duration bash -c "curl -fsSL '$key_url' | apt-key add -" 2>/dev/null; then
+        success=true
+        log_info "Used apt-key fallback method"
+      fi
+    fi
+    
+    if [ "$success" = "true" ]; then
+      log_info "GPG key added successfully"
+      return 0
+    else
+      log_warn "GPG key addition failed on attempt $attempt"
+      rm -f "$key_file" 2>/dev/null || true
+    fi
+    
+    if [ $attempt -lt $max_attempts ]; then
+      log_info "Waiting 5 seconds before retry..."
+      sleep 5
+    fi
+  done
+  
+  log_error "Failed to add GPG key after $max_attempts attempts"
+  return 1
 }
 
 # Function to install packages with robust retry logic across different package managers
@@ -300,4 +399,6 @@ export -f command_exists
 export -f apt_install_with_retry
 export -f apt_update_with_retry
 export -f install_package_with_retry
-export -f is_pgbackrest_installed 
+export -f is_pgbackrest_installed
+export -f clean_apt_locks
+export -f add_gpg_key_with_timeout 
