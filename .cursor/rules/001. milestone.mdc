@@ -5,6 +5,19 @@ alwaysApply: true
 ---
 # Milestone
 
+## Milestone 11 (In Progress)
+- Enhanced Security Monitoring and Protection:
+  - Implement fail2ban for automated IP blocking based on attack patterns
+  - Set up geographic IP filtering to block traffic from high-risk countries
+  - Add proper Web Application Firewall (WAF) with nginx rate limiting
+  - Configure DDoS protection and attack traffic mitigation
+  - Implement comprehensive security logging and monitoring
+  - Add IP reputation-based blocking and whitelist management
+  - Configure automated security incident response and alerting
+  - Enhance nginx security headers and SSL/TLS hardening
+  - Implement request rate limiting and burst protection
+  - Add security audit logging for all access attempts
+
 ## Milestone 10 (Completed)
 - Created `create_database.sh` under tools folder that:
   - Automates the creation of new PostgreSQL databases with dedicated admin users
