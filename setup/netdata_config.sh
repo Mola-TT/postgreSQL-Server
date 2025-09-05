@@ -335,6 +335,17 @@ EOC
     auth_basic "Netdata Monitoring";
     auth_basic_user_file /etc/nginx/.htpasswd.netdata;
 
+    # Security Headers for Netdata
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    
+    # Rate limiting for Netdata access
+    limit_req zone=general_limit burst=15 nodelay;
+    limit_conn conn_limit_per_ip 5;
+
     # Proxy to Netdata
     location / {
         proxy_pass http://netdata;
