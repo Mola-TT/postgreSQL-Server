@@ -235,8 +235,15 @@ upgrade_packages_with_progress() {
 
 # Set timezone
 set_timezone() {
-    # Use SERVER_TIMEZONE if defined, otherwise fallback to UTC
     local timezone="${SERVER_TIMEZONE:-UTC}"
+    
+    log_info "Setting timezone to $timezone..."
+    
+    # Check if timezone is valid
+    if ! timedatectl list-timezones | grep -q "^$timezone$"; then
+        log_warn "Invalid timezone '$timezone', using UTC instead"
+        timezone="UTC"
+    fi
         
     execute_silently "timedatectl set-timezone \"$timezone\"" \
         "Timezone set to $timezone" \
@@ -247,8 +254,40 @@ set_timezone() {
     export TIMEZONE="$timezone"  # Set TIMEZONE for backward compatibility
 }
 
+# Show system update status and information
+show_system_update_status() {
+    log_info "System Update Information:"
+    log_info "  - Update timeout: ${SYSTEM_UPDATE_TIMEOUT:-300} seconds"
+    log_info "  - Upgrade timeout: ${SYSTEM_UPGRADE_TIMEOUT:-1800} seconds"
+    log_info "  - Max attempts: ${SYSTEM_UPDATE_MAX_ATTEMPTS:-3}"
+    log_info "  - Progress updates every 30-60 seconds"
+    
+    # Show current system info
+    local os_info=$(lsb_release -d 2>/dev/null | cut -f2 || echo "Unknown")
+    local uptime_info=$(uptime | awk '{print $3,$4}' | sed 's/,$//')
+    
+    log_info "  - OS: $os_info"
+    log_info "  - Uptime: $uptime_info"
+    
+    # Check available disk space
+    local disk_space=$(df -h / | awk 'NR==2 {print $4}' 2>/dev/null || echo "Unknown")
+    log_info "  - Available disk space: $disk_space"
+    
+    # Check if running in screen/tmux for better experience
+    if [ -n "$STY" ] || [ -n "$TMUX" ]; then
+        log_info "  - Running in screen/tmux: YES (good for long operations)"
+    else
+        log_info "  - Running in screen/tmux: NO (consider using screen/tmux for stability)"
+    fi
+    
+    log_info "Starting system update process..."
+}
+
 # Export functions
 export -f update_system
 export -f set_timezone
 export -f apt_install_with_retry
-export -f apt_update_with_retry\n\n# Show system update status and information\nshow_system_update_status() {\n    log_info \"System Update Information:\"\n    log_info \"  - Update timeout: ${SYSTEM_UPDATE_TIMEOUT:-300} seconds\"\n    log_info \"  - Upgrade timeout: ${SYSTEM_UPGRADE_TIMEOUT:-1800} seconds\"\n    log_info \"  - Max attempts: ${SYSTEM_UPDATE_MAX_ATTEMPTS:-3}\"\n    log_info \"  - Progress updates every 30-60 seconds\"\n    \n    # Show current system info\n    local os_info=$(lsb_release -d 2>/dev/null | cut -f2 || echo \"Unknown\")\n    local uptime_info=$(uptime | awk '{print $3,$4}' | sed 's/,$//')\n    \n    log_info \"  - OS: $os_info\"\n    log_info \"  - Uptime: $uptime_info\"\n    \n    # Check available disk space\n    local disk_space=$(df -h / | awk 'NR==2 {print $4}' 2>/dev/null || echo \"Unknown\")\n    log_info \"  - Available disk space: $disk_space\"\n    \n    # Check if running in screen/tmux for better experience\n    if [ -n \"$STY\" ] || [ -n \"$TMUX\" ]; then\n        log_info \"  - Running in screen/tmux: YES (good for long operations)\"\n    else\n        log_info \"  - Running in screen/tmux: NO (consider using screen/tmux for stability)\"\n    fi\n    \n    log_info \"Starting system update process...\"\n}\n\nexport -f update_package_lists_with_progress\nexport -f upgrade_packages_with_progress\nexport -f show_system_update_status 
+export -f apt_update_with_retry
+export -f update_package_lists_with_progress
+export -f upgrade_packages_with_progress
+export -f show_system_update_status
