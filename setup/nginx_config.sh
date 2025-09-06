@@ -660,12 +660,15 @@ setup_nginx() {
   
   # Only continue with configuration if Nginx was installed
   if [ "$nginx_installed" = "true" ]; then
+    # Configure Nginx main configuration first (defines rate limiting zones)
+    configure_nginx_main
+    
     # Install SSL certificate
     install_ssl_certificate && ssl_configured=true || {
       log_warn "Failed to install SSL certificate, continuing with limited functionality"
     }
     
-    # Configure Nginx
+    # Configure Nginx site configuration
     configure_nginx && config_success=true || {
       log_error "Failed to configure Nginx for subdomain mapping"
       
@@ -728,9 +731,6 @@ setup_nginx() {
   
   # Configure PostgreSQL stream proxy
   configure_postgresql_stream
-  
-  # Configure Nginx main configuration with proper log format for Netdata
-  configure_nginx_main
   
   # Print setup summary
   log_info "-----------------------------------------------"

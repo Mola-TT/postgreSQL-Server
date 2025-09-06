@@ -171,27 +171,28 @@ apt_update_with_retry() {
 clean_apt_locks() {
   log_info "Cleaning apt locks and stuck processes..."
   
-  # Kill any stuck apt/dpkg processes with timeout
-  timeout 10 pkill -f "apt-get" 2>/dev/null || true
-  timeout 10 pkill -f "dpkg" 2>/dev/null || true
-  timeout 10 pkill -f "gpg.*postgresql" 2>/dev/null || true
-  timeout 10 pkill -f "gpg.*dearmor" 2>/dev/null || true
+  # Kill any stuck apt/dpkg processes - no timeout wrapper needed for pkill
+  pkill -f "apt-get" 2>/dev/null || true
+  pkill -f "dpkg" 2>/dev/null || true
+  pkill -f "gpg.*postgresql" 2>/dev/null || true
+  pkill -f "gpg.*dearmor" 2>/dev/null || true
   
   # Wait a moment for processes to terminate
-  sleep 3
+  sleep 2
   
   # Force kill if still running
   pkill -9 -f "apt-get" 2>/dev/null || true
   pkill -9 -f "dpkg" 2>/dev/null || true
   pkill -9 -f "gpg.*postgresql" 2>/dev/null || true
+  pkill -9 -f "gpg.*dearmor" 2>/dev/null || true
   
   # Remove lock files
   rm -f /var/lib/apt/lists/lock 2>/dev/null || true
   rm -f /var/cache/apt/archives/lock 2>/dev/null || true
   rm -f /var/lib/dpkg/lock* 2>/dev/null || true
   
-  # Fix any interrupted dpkg operations
-  timeout 60 dpkg --configure -a 2>/dev/null || true
+  # Fix any interrupted dpkg operations with timeout
+  timeout 30 dpkg --configure -a 2>/dev/null || true
   
   log_info "Apt locks cleaned"
 }
