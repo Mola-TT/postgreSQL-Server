@@ -20,21 +20,30 @@ source "$NGINX_SCRIPT_DIR/../lib/utilities.sh"
 install_nginx() {
   log_info "Installing Nginx..."
   
-  # Check if Nginx is already installed
+  # Check if Nginx is already installed and stream module is available
   if command -v nginx >/dev/null 2>&1; then
-    log_info "Nginx is already installed, skipping installation"
-    return 0
+    log_info "Nginx is already installed, checking for stream module..."
+    # Check if stream module is available
+    if nginx -V 2>&1 | grep -q "with-stream" || [ -f "/etc/nginx/modules-available/50-mod-stream.conf" ]; then
+      log_info "Nginx with stream module is already available"
+      return 0
+    else
+      log_info "Nginx installed but stream module not available, will install nginx-full"
+    fi
   fi
   
   # Update package index
   log_info "Updating package index..."
   apt_update_with_retry 5 30
   
-  # Install Nginx with retry logic
-  log_info "Installing Nginx packages..."
-  if ! apt_install_with_retry "nginx" 5 30; then
-    log_error "Failed to install Nginx, but will continue with limited functionality"
-    return 1
+  # Install Nginx with stream module support
+  log_info "Installing Nginx packages with stream module..."
+  if ! apt_install_with_retry "nginx-full" 5 30; then
+    log_warn "Failed to install nginx-full, trying standard nginx package"
+    if ! apt_install_with_retry "nginx" 5 30; then
+      log_error "Failed to install Nginx, but will continue with limited functionality"
+      return 1
+    fi
   fi
   
   # Check if Nginx was actually installed
@@ -52,6 +61,52 @@ install_nginx() {
   
   log_info "Nginx installed successfully"
   return 0
+}
+
+# Enable nginx stream module if available
+enable_nginx_stream_module() {
+  log_info "Enabling nginx stream module..."
+  
+  # Check if stream module is available
+  local stream_module_available=false
+  
+  # Method 1: Check if module is built-in (nginx-full)
+  if nginx -V 2>&1 | grep -q "with-stream"; then
+    log_info "Stream module is built into nginx"
+    stream_module_available=true
+  fi
+  
+  # Method 2: Check for loadable module
+  if [ -f "/etc/nginx/modules-available/50-mod-stream.conf" ]; then
+    log_info "Stream module available as loadable module"
+    # Enable the module
+    if [ ! -f "/etc/nginx/modules-enabled/50-mod-stream.conf" ]; then
+      ln -s /etc/nginx/modules-available/50-mod-stream.conf /etc/nginx/modules-enabled/ 2>/dev/null || true
+      log_info "Enabled nginx stream module"
+    fi
+    stream_module_available=true
+  fi
+  
+  # Method 3: Try to install separate module package
+  if [ "$stream_module_available" = "false" ]; then
+    log_info "Attempting to install nginx stream module package..."
+    if apt_install_with_retry "libnginx-mod-stream" 3 10; then
+      # Try to enable it
+      if [ -f "/etc/nginx/modules-available/50-mod-stream.conf" ] && [ ! -f "/etc/nginx/modules-enabled/50-mod-stream.conf" ]; then
+        ln -s /etc/nginx/modules-available/50-mod-stream.conf /etc/nginx/modules-enabled/ 2>/dev/null || true
+        log_info "Installed and enabled nginx stream module"
+        stream_module_available=true
+      fi
+    fi
+  fi
+  
+  if [ "$stream_module_available" = "true" ]; then
+    log_info "Nginx stream module is available and enabled"
+    export NGINX_STREAM_AVAILABLE=true
+  else
+    log_warn "Nginx stream module is not available - PostgreSQL proxy features will be limited"
+    export NGINX_STREAM_AVAILABLE=false
+  fi
 }
 
 # Install certbot with retry mechanism
@@ -490,6 +545,12 @@ configure_postgresql_stream() {
   
   log_info "Configuring Nginx stream module for PostgreSQL connections..."
   
+  # Check if stream module is available
+  if [ "${NGINX_STREAM_AVAILABLE:-false}" != "true" ]; then
+    log_warn "Nginx stream module not available, skipping PostgreSQL stream proxy configuration"
+    return 0
+  fi
+  
   # Create stream configuration for PostgreSQL
   mkdir -p /etc/nginx/stream.d
   
@@ -536,7 +597,7 @@ configure_nginx_main() {
     cp "$nginx_main_conf" "${nginx_main_conf}.bak.setup" 2>/dev/null
   fi
   
-  # Create a new nginx.conf with proper log format for Netdata and stream module
+  # Create a new nginx.conf with proper log format for Netdata and conditionally include stream module
   cat > "$nginx_main_conf" << EOF
 user www-data;
 worker_processes auto;
@@ -548,11 +609,20 @@ events {
     # multi_accept on;
 }
 
+EOF
+
+  # Only include stream block if module is available
+  if [ "${NGINX_STREAM_AVAILABLE:-false}" = "true" ]; then
+    cat >> "$nginx_main_conf" << EOF
 # Stream module for PostgreSQL connections
 stream {
     include /etc/nginx/stream.d/*.conf;
 }
 
+EOF
+  fi
+
+  cat >> "$nginx_main_conf" << EOF
 http {
     ##
     # Basic Settings
@@ -660,6 +730,9 @@ setup_nginx() {
   
   # Only continue with configuration if Nginx was installed
   if [ "$nginx_installed" = "true" ]; then
+    # Check and enable stream module if available (sets NGINX_STREAM_AVAILABLE)
+    enable_nginx_stream_module
+    
     # Configure Nginx main configuration first (defines rate limiting zones)
     configure_nginx_main
     
