@@ -311,7 +311,6 @@ large_client_header_buffers 4 4k;
 # Timeout settings
 client_body_timeout 12;
 client_header_timeout 12;
-keepalive_timeout 15;
 send_timeout 10;
 
 # Real IP configuration (if behind CloudFlare or other proxy)
