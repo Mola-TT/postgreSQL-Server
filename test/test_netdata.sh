@@ -156,7 +156,7 @@ test_external_netdata() {
         admin_pass="admin"
         log_info "Trying with default credentials (admin:admin)..."
       else
-        log_info "Testing with credentials ($admin_user:$admin_pass)..."
+        log_info "Testing with credentials ($admin_user:*****)..."
       fi
       
       local auth_status=$(curl -s -o /dev/null -w "%{http_code}" --insecure -u "$admin_user:$admin_pass" "https://monitor.$domain/" 2>/dev/null || echo "Failed to connect")

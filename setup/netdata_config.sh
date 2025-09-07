@@ -397,7 +397,7 @@ EOC
   chmod 600 /etc/netdata/netdata_credentials.txt
   
   log_info "Created basic auth credentials for Netdata (User: $admin_user)"
-  log_info "Password for Netdata access: $admin_pass"
+  log_info "Password for Netdata access: [REDACTED - check /etc/nginx/.htpasswd or conf/user.env]"
   
   # Create symbolic link to enable site
   if [ ! -f "/etc/nginx/sites-enabled/netdata" ]; then
