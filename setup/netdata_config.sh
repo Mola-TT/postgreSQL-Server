@@ -82,8 +82,13 @@ install_netdata() {
     return 1
   }
   
-  # Run the installer with safety flags
-  bash /tmp/netdata_kickstart.sh --non-interactive --stable-channel --disable-telemetry --disable-cloud --dont-wait > "$install_log" 2>&1
+  # Run the installer with safety flags - enable cloud if requested
+  local cloud_flag=""
+  if [ "${NETDATA_ENABLE_CLOUD:-true}" = "false" ]; then
+    cloud_flag="--disable-cloud"
+  fi
+  
+  bash /tmp/netdata_kickstart.sh --non-interactive --stable-channel --disable-telemetry $cloud_flag --dont-wait > "$install_log" 2>&1
   
   # Check if installation was successful
   if command -v netdata >/dev/null 2>&1 || [ -f "/usr/sbin/netdata" ] || [ -f "/opt/netdata/bin/netdata" ]; then
@@ -152,7 +157,22 @@ configure_netdata() {
   allow connections from = localhost 127.0.0.1
   allow dashboard from = localhost 127.0.0.1
   default port = 19999
+
+[cloud]
+  enabled = ${NETDATA_ENABLE_CLOUD:-true}
 EOF
+
+  # Add cloud configuration if cloud is enabled
+  if [ "${NETDATA_ENABLE_CLOUD:-true}" = "true" ]; then
+    log_info "Configuring Netdata Cloud connectivity..."
+    
+    # Add cloud-specific configuration
+    cat >> "$netdata_conf_dir/netdata.conf" << EOF
+  cloud base url = https://app.netdata.cloud
+  room id = ${NETDATA_ROOM_ID:-}
+  proxy = ${NETDATA_PROXY:-}
+EOF
+  fi
   
   # Configure health alerts
   log_info "Configuring Netdata health alerts..."
