@@ -4,18 +4,21 @@
 [![Shell Script](https://img.shields.io/badge/Shell_Script-bashrc-%23121011.svg?style=flat&logo=gnu-bash&logoColor=white)](https://www.gnu.org/software/bash/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=flat&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 
-A comprehensive, production-ready PostgreSQL server setup with **enterprise-grade security**, **automated disaster recovery**, **dynamic optimization**, and **comprehensive monitoring**. This project automates the complete deployment of a secure, high-performance PostgreSQL infrastructure.
+A comprehensive, production-ready PostgreSQL server setup with **enterprise-grade security**, **automated disaster recovery**, **dynamic optimization**, and **comprehensive monitoring**. This project automates the complete deployment of a secure, high-performance PostgreSQL infrastructure with advanced threat protection and monitoring capabilities.
 
 ## 🚀 Key Features
 
 - **🔐 Enterprise Security**: SCRAM-SHA-256 authentication, SSL/TLS encryption, firewall configuration
+- **🛡️ Advanced Threat Protection**: fail2ban automated IP blocking, geographic filtering, WAF protection
 - **📊 Dynamic Optimization**: Hardware-aware PostgreSQL and pgbouncer tuning
 - **🔄 Disaster Recovery**: Automated service recovery, backup management, email notifications
-- **📈 Comprehensive Monitoring**: Netdata integration with custom PostgreSQL dashboards
-- **🌐 Web Access**: Nginx reverse proxy with subdomain-to-database routing
+- **📈 Comprehensive Monitoring**: Netdata integration with custom PostgreSQL dashboards and security alerts
+- **🌐 Web Access**: Nginx reverse proxy with subdomain-to-database routing and security headers
 - **🛠 Database Management**: Automated database creation with isolated admin users
 - **🔧 User Synchronization**: Auto-sync PostgreSQL users to pgbouncer userlist
-- **📧 Email Notifications**: Real-time alerts for system events and issues
+- **📧 Email Notifications**: Real-time alerts for system events, security incidents, and issues
+- **🌍 Geographic Protection**: Country-based IP blocking for high-risk regions
+- **⚡ DDoS Protection**: Rate limiting, request throttling, and automated attack mitigation
 
 ---
 
@@ -66,6 +69,7 @@ postgreSQL-Server/
 │   ├── hardware_change_detector.sh # Hardware monitoring
 │   ├── pg_user_monitor.sh        # User synchronization
 │   ├── ssl_renewal.sh            # SSL certificate management
+│   ├── security_config.sh        # Enhanced security & threat protection
 │   └── general_config.sh         # General system configuration
 ├── 📁 tools/                     # Administrative tools
 │   ├── create_database.sh        # Database creation utility
@@ -122,6 +126,11 @@ SMTP_SERVER="smtp.yourdomain.com"
 SMTP_USERNAME="your-smtp-user"
 SMTP_PASSWORD="your-smtp-password"
 
+# Security Configuration
+SECURITY_EMAIL="security@yourdomain.com"
+GEOIP_BLOCKED_COUNTRIES="CN RU KP IR"
+FAIL2BAN_WHITELIST_IPS="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
+
 # Monitoring Access
 NETDATA_ADMIN_USER="admin"
 NETDATA_ADMIN_PASSWORD="secure-monitoring-password"
@@ -140,6 +149,7 @@ NETDATA_ADMIN_PASSWORD="secure-monitoring-password"
 /var/log/pg-user-monitor.log        # User sync monitoring
 /var/log/disaster-recovery.log      # Disaster recovery events
 /var/log/letsencrypt-renewal.log    # SSL certificate renewal
+/var/log/security-monitor.log       # Security monitoring and alerts
 /var/log/msmtp.log                  # Email sending logs
 
 # PostgreSQL logs
@@ -147,6 +157,7 @@ NETDATA_ADMIN_PASSWORD="secure-monitoring-password"
 /var/log/pgbouncer/               # Connection pooler logs
 /var/log/nginx/                   # Web server logs
 /var/log/netdata/                 # Monitoring system logs
+/var/log/fail2ban.log             # Security blocking events
 ```
 
 ### 💾 **Backups**
@@ -176,6 +187,16 @@ NETDATA_ADMIN_PASSWORD="secure-monitoring-password"
 # Nginx configuration
 /etc/nginx/sites-available/postgresql          # PostgreSQL proxy config
 /etc/nginx/sites-available/netdata.conf       # Monitoring proxy config
+/etc/nginx/conf.d/security.conf               # Security headers and WAF rules
+/etc/nginx/snippets/security-headers.conf     # Security header snippets
+/etc/nginx/snippets/block-exploits.conf       # Exploit blocking rules
+
+# Security configuration
+/etc/fail2ban/jail.d/postgresql-server.conf   # fail2ban jail configuration
+/etc/fail2ban/filter.d/nginx-*.conf          # Custom nginx filters
+/etc/fail2ban/filter.d/postgresql-auth.conf  # PostgreSQL auth filter
+/usr/local/bin/geoip-block.sh                # Geographic blocking script
+/usr/local/bin/security-monitor.sh           # Security monitoring script
 
 # SSL certificates
 /etc/letsencrypt/live/yourdomain.com/         # Let's Encrypt certificates
@@ -207,11 +228,13 @@ NETDATA_ADMIN_PASSWORD="secure-monitoring-password"
 /etc/systemd/system/pg-user-monitor.service    # User monitoring service
 /etc/systemd/system/disaster-recovery.service  # Disaster recovery service
 /etc/systemd/system/pg-full-optimization.timer # Hardware change optimization
+/etc/systemd/system/geoip-block.service        # Geographic IP blocking service
 
 # Cron jobs
 /etc/cron.d/postgresql-backup      # Backup scheduling
 /etc/cron.d/ssl-renewal-reminder   # SSL renewal reminders
 /etc/cron.d/certbot               # Let's Encrypt renewal
+/etc/cron.d/security-monitor      # Security monitoring cron job
 ```
 
 ---
@@ -261,16 +284,23 @@ sudo ./test/run_tests.sh
 ### 📊 **Service Management**
 ```bash
 # Check all services status
-systemctl status postgresql pgbouncer nginx netdata
+systemctl status postgresql pgbouncer nginx netdata fail2ban
 
 # Restart services
 sudo systemctl restart postgresql
 sudo systemctl restart pgbouncer
 sudo systemctl restart nginx
+sudo systemctl restart fail2ban
 
 # View logs
 sudo journalctl -u postgresql -f
 sudo journalctl -u disaster-recovery -f
+sudo journalctl -u fail2ban -f
+
+# Security management
+sudo fail2ban-client status                    # Check fail2ban status
+sudo fail2ban-client status nginx-limit-req   # Check specific jail
+sudo fail2ban-client unban <IP>               # Unban an IP address
 ```
 
 ### 💾 **Backup Management**
@@ -346,6 +376,19 @@ sudo tail -f /var/log/letsencrypt-renewal.log
 # Test email configuration
 sudo ./test/test_email_notification.sh
 sudo tail -f /var/log/msmtp.log
+```
+
+**Security issues or suspicious activity:**
+```bash
+# Check security monitoring logs
+sudo tail -f /var/log/security-monitor.log
+
+# Review fail2ban activity
+sudo fail2ban-client status
+sudo tail -f /var/log/fail2ban.log
+
+# Check nginx security logs
+sudo tail -f /var/log/nginx/error.log | grep -E "(limit_req|444)"
 ```
 
 ### 🔧 **Log Collection**
